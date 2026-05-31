@@ -1,0 +1,8 @@
+<Solution>
+	<Folder Name="/Tests/">
+		<Project Path="tests/__ProjectName__.Tests/__ProjectName__.Tests.fsproj">
+			<BuildDependency Project="src/__ProjectName__/__ProjectName__.fsproj" />
+		</Project>
+	</Folder>
+	<Project Path="src/__ProjectName__/__ProjectName__.fsproj" />
+</Solution>

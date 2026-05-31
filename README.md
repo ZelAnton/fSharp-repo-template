@@ -1,2 +1,55 @@
-# fSharp-repo-template
-F# repository template
+# __ProjectName__
+
+__Description__
+
+## Requirements
+
+- .NET 10.0 or later
+
+## Installation
+
+Available on [NuGet.org](https://www.nuget.org/packages/__ProjectName__).
+
+```sh
+dotnet add package __ProjectName__
+```
+
+## Usage
+
+```fsharp
+open __ProjectName__
+
+Greeter.greet "World" // "Hello, World!"
+```
+
+TODO: replace the placeholder API above and document the real public surface.
+
+## Verifying the package
+
+> Applies when the project ships a NuGet package. Remove this section for apps
+> or internal libraries.
+
+Each GitHub Release ships a `SHA256SUMS` file alongside the `.nupkg` / `.snupkg`.
+Download all three into the same directory, then:
+
+```sh
+sha256sum -c SHA256SUMS
+```
+
+Expected:
+
+```
+__ProjectName__.<version>.nupkg: OK
+__ProjectName__.<version>.snupkg: OK
+```
+
+The package on NuGet.org carries a repository signature from nuget.org. You can
+inspect it with `dotnet nuget verify __ProjectName__.<version>.nupkg --all`.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the version history.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
