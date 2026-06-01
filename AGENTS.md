@@ -203,7 +203,8 @@ F# uses `try`/`with` and `try`/`finally` (there is no `catch` keyword, and a sin
 
 - **CodeQL does not support F#.** There is deliberately no `codeql.yml` in this template — a CodeQL workflow declaring `language: fsharp` will fail. Do not add one.
 - Static analysis relies on `TreatWarningsAsErrors` (the F# compiler's own diagnostics) plus Fantomas formatting in CI. For deeper analysis, wire F# analyzers (e.g. the [Ionide analyzers](https://github.com/ionide/ionide-analyzers)) through `Directory.Build.props`.
-- Keep dependency scanning instead of CodeQL: Dependabot and/or `dotnet list package --vulnerable`. Treat new vulnerability alerts like build warnings.
+- Keep dependency scanning instead of CodeQL. `Directory.Build.props` enables `NuGetAudit`/`NuGetAuditMode=all` (direct + transitive packages checked against the NuGet advisory database on restore; NU1901-1904 stay warnings, not build-breaking errors). `.github/dependabot.yml` opens weekly grouped PRs for Actions and central NuGet versions. `dotnet list package --vulnerable` is the ad-hoc check. Treat new vulnerability alerts like build warnings.
+- Actions in `.github/workflows/*.yml` are pinned to full commit SHAs with a `# vN` comment; Dependabot bumps the SHA and the comment. Do not replace a pinned SHA with a floating tag.
 
 ## Comments
 
