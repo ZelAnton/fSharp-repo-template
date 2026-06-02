@@ -190,6 +190,16 @@ the scaffold, treat new alerts like build warnings; dismiss confirmed false
 positives in the GitHub UI with a written justification rather than weakening the
 workflow.
 
+## Agent instruction files (in repos created from this template)
+
+This applies to a repo **created from this template**, not this template itself
+(here they stay tracked and pushed). Downstream, keep `AGENTS.md`, `CLAUDE.md`, and
+`.claude/` **git-ignored and untracked** so they stay on disk for tooling but never
+reach the remote — a by-hand step before the first push (the init script does not
+do it). For the recipe see the "Agent instruction files are local-only in generated
+repos" section of [AGENTS.md](AGENTS.md), or `docs/AGENT-INIT-GUIDE.md` while it
+exists.
+
 ## Version control workflow
 
 The repo uses [jujutsu (`jj`)](https://jj-vcs.github.io/jj/) (colocated with git). Use `jj` commands; the canonical workflow:
