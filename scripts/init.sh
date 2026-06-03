@@ -56,6 +56,11 @@ done
 # Project / namespace / assembly / NuGet id: letters, digits, underscores;
 # dot-separated segments allowed (e.g. Acme.Widgets). Mirrors init.ps1's regex
 # ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$.
+# Reject a leading/trailing dot up front: `IFS='.' read` silently drops a
+# trailing empty field, so `Acme.` would otherwise slip past the segment loop.
+case "$project_name" in
+  .*|*.) die "invalid --project-name '$project_name'. Use letters, digits, underscores; dot-separated segments allowed (e.g. Acme.Widgets)." ;;
+esac
 IFS='.' read -ra _segs <<< "$project_name"
 for seg in "${_segs[@]}"; do
   case "$seg" in
