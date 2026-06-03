@@ -54,10 +54,26 @@ so the release push runs as an App that sits in the ruleset's bypass list.
 
 ## Verify
 
-Dispatch the **Release** workflow (Actions → Release → Run workflow, from `main`).
-The *Mint GitHub App token* step should run (not skip), and the *Push the release
-commit + tag* step should succeed. If the push is rejected with a protection error,
-re-check step 5 (the App must be in the ruleset's bypass list, not just installed).
+> ⚠️ **Do not dispatch the Release workflow just to test the bypass.** A real run
+> publishes to NuGet.org — which **cannot be undone** (a published version can only
+> be unlisted, never replaced) — and bumps the version and pushes a tag. Verify the
+> wiring non-destructively instead:
+
+- **Credentials wired:** the *Mint GitHub App token* step is gated on
+  `vars.RELEASE_APP_ID != ''`, so confirm the repo **variable** `RELEASE_APP_ID` and
+  the **secret** `RELEASE_APP_PRIVATE_KEY` are both set
+  (Settings → Secrets and variables → Actions).
+- **App in the bypass list:** Settings → Rules → Rulesets → the `main` ruleset →
+  **Bypass list** shows your App.
+- **Push permission (optional):** confirm the App can write to `main` out-of-band —
+  push a trivial no-op commit to `main` authenticated as the App, or rehearse in a
+  throwaway repo carrying the same ruleset. Don't use the production Release workflow
+  as the test.
+
+On the **next real release**, the *Mint GitHub App token* step should execute (not
+skip) and *Push the release commit + tag (atomic)* should succeed. If that push is
+rejected with a protection error, re-check step 5 (the App must be in the ruleset's
+bypass list, not merely installed).
 
 ## Notes
 
@@ -65,5 +81,7 @@ re-check step 5 (the App must be in the ruleset's bypass list, not just installe
   to revoke or rotate.
 - The release commit is attributed to the maintainer identity stamped at init
   (`__Author__` / `__AuthorEmail__`), not to the App.
-- This only affects the **push to `main`**. NuGet publishing uses `NUGET_API_KEY`
-  and is independent of this setup.
+- When configured, the App token authenticates both the **push to `main`** and the
+  **GitHub Release** creation (each falls back to the default `GITHUB_TOKEN` when the
+  App isn't set up). NuGet publishing uses `NUGET_API_KEY` and is independent of this
+  setup.

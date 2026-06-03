@@ -103,7 +103,8 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
 ## Optional pieces — remove what you don't need
 
 - **NuGet publishing** — if this is an app or internal library, delete
-  `.github/workflows/release.yml` and the packaging properties in the `.fsproj`
+  `.github/workflows/release.yml`, `release-token-bypass.md` (the release-only
+  protected-`main` recipe), and the packaging properties in the `.fsproj`
   (`PackageId`, `Authors`, `Description`, URLs, symbols, SourceLink, the README/
   CHANGELOG `Pack` items). Keep `Directory.Build.props` and CI.
 - **Linux testing from Windows** — delete `scripts/test-linux.ps1` and
