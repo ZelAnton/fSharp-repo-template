@@ -16,8 +16,9 @@
 		implicit reference is dropped from the dependency graph unless a matching
 		PackageVersion exists — leaving the runtime unable to load FSharp.Core, so NUnit
 		silently discovers zero tests. Keep this aligned with the FSharp.Core that ships
-		with the target .NET SDK; the init/CI SDK is .NET 10, whose bundled FSharp.Core
-		is 10.1.300. If a future SDK patch bundles a newer FSharp.Core, bump this to match.
+		with the SDK band pinned in global.json (10.0.3xx), whose bundled FSharp.Core is
+		10.1.300. The two are coupled: if you bump the global.json band, bump this pin to
+		the FSharp.Core that band bundles (and vice versa).
 	-->
 	<ItemGroup>
 		<PackageVersion Include="FSharp.Core" Version="10.1.300" />
