@@ -145,6 +145,12 @@ foreach ($rel in @('TEMPLATE.md', 'docs/AGENT-INIT-GUIDE.md')) {
     $path = Join-Path $repoRoot $rel
     if (Test-Path $path) { Remove-Item -LiteralPath $path -Force }
 }
+# Drop docs/ if it's now empty (it may still hold linux-testing.md, in which
+# case it is kept).
+$docsDir = Join-Path $repoRoot 'docs'
+if ((Test-Path $docsDir) -and -not (Get-ChildItem -LiteralPath $docsDir -Force)) {
+    Remove-Item -LiteralPath $docsDir -Force
+}
 
 Write-Host ""
 Write-Host "Done. Next steps:" -ForegroundColor Green
@@ -156,6 +162,9 @@ Write-Host "  5. NuGet publishing: add the NUGET_API_KEY repo secret, or delete"
 Write-Host "     .github/workflows/release.yml and the packaging properties in the .fsproj."
 Write-Host "  6. Commit the initialized project."
 
+# Remove both initializers unless asked to keep them.
 if (-not $KeepScript) {
+    $siblingSh = Join-Path $PSScriptRoot 'init.sh'
+    if (Test-Path $siblingSh) { Remove-Item -LiteralPath $siblingSh -Force }
     Remove-Item -LiteralPath $selfPath -Force
 }

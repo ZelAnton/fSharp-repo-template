@@ -22,16 +22,23 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
    pwsh ./scripts/init.ps1 -ProjectName Acme.Widgets -Author "Jane Doe" -GitHubOwner acme -Description "Widget toolkit"
    ```
 
-   `-ProjectName` is required; the rest are optional and fall back to sensible
-   defaults (`git config user.name`, `your-org`, a TODO description, the current
-   year). The script:
+   On a POSIX shell (Linux/macOS, or git-bash) run the equivalent instead:
+
+   ```bash
+   bash ./scripts/init.sh --project-name Acme.Widgets --author "Jane Doe" --github-owner acme --description "Widget toolkit"
+   ```
+
+   `-ProjectName` / `--project-name` is required; the rest are optional and fall
+   back to sensible defaults (`git config user.name`, `git config user.email`,
+   `your-org`, a TODO description, the current year). The script:
    - replaces the placeholder tokens in every file's contents;
    - renames the token-named files and folders (`src/__ProjectName__`,
      `tests/__ProjectName__.Tests`, the `.fsproj`/`.slnx`/`.sln.DotSettings`);
    - activates `.claude/settings.json` from its shipped `.template` form
      (sane shared permissions for `dotnet` commands);
    - deletes `TEMPLATE.md`, `docs/AGENT-INIT-GUIDE.md`, and (unless
-     `-KeepScript`) itself.
+     `-KeepScript` / `--keep-script`) both initializers (`init.ps1` and
+     `init.sh`).
 3. Verify:
 
    ```pwsh
