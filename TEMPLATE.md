@@ -71,6 +71,7 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
 |---|---|
 | `__ProjectName__` | project / namespace / assembly / package id + file & folder names |
 | `__Author__` | author (LICENSE, `<Authors>`, `<Copyright>`) |
+| `__AuthorEmail__` | author email (release-commit identity in `release.yml`) |
 | `__GitHubOwner__` | GitHub owner/org in repository URLs |
 | `__Description__` | package description |
 | `__Year__` | copyright year |
