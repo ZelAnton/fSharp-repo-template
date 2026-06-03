@@ -15,23 +15,27 @@ have gone wrong in avoidable ways. **Read it before touching any files.**
 
 1. **Read before you write.** Read `TEMPLATE.md`, this file, `AGENTS.md`, and
    `CLAUDE.md` *first*. Do not generate a single file based on an assumed layout.
-2. **Prefer the init script over hand-rolling.** `scripts/init.ps1` is the
+2. **Check the toolchain first.** Run `scripts/check-env.ps1` (or
+   `scripts/check-env.sh`). If it reports a missing tool, STOP and offer the user
+   the install commands it prints — don't run init against an environment that
+   can't build or test.
+3. **Prefer the init script over hand-rolling.** `scripts/init.ps1` is the
    supported path for a standard single-project init. Run it; don't recreate its
    work by hand.
-3. **F# source is spaces, not tabs.** The compiler rejects tabs in indentation.
+4. **F# source is spaces, not tabs.** The compiler rejects tabs in indentation.
    `.editorconfig` already encodes this — don't "fix" `.fs` files to tabs.
-4. **Respect F# compile order.** The `.fsproj` lists `.fs` files in dependency
+5. **Respect F# compile order.** The `.fsproj` lists `.fs` files in dependency
    order; there is no globbing. New files go in the right place in `<Compile>`.
-5. **FSharp.Core must be explicit under CPM** (see the dedicated section below) —
+6. **FSharp.Core must be explicit under CPM** (see the dedicated section below) —
    the single most common way to ship a "builds but 0 tests" repo.
-6. **Match the shell to the tool.** On Windows the Bash tool is POSIX (git bash);
+7. **Match the shell to the tool.** On Windows the Bash tool is POSIX (git bash);
    PowerShell cmdlets fail there. Use the PowerShell tool for cmdlets.
-7. **Don't fight the permission model.** `.claude/settings.json` ships as a
+8. **Don't fight the permission model.** `.claude/settings.json` ships as a
    `.template`; activating it is the script's / user's job.
-8. **Verify, then clean.** `dotnet tool restore`, `dotnet build`, `dotnet test`
+9. **Verify, then clean.** `dotnet tool restore`, `dotnet build`, `dotnet test`
    (+ `dotnet pack` if it publishes, + `dotnet fantomas --check`), then remove
    build artifacts before finishing.
-9. **Agent files stay local in the new repo.** `AGENTS.md`, `CLAUDE.md`, and
+10. **Agent files stay local in the new repo.** `AGENTS.md`, `CLAUDE.md`, and
    `.claude/` must become git-ignored and untracked so they never reach the new
    repository's remote. This is a **by-hand step — the init script does not do
    it** — done before the first push. See
@@ -81,7 +85,10 @@ Read this even if you do nothing else. **It fails silently.**
 ## The happy path (standard single-project init)
 
 1. **Read** `TEMPLATE.md` and this guide. Skim `AGENTS.md` / `CLAUDE.md`.
-2. **Run the init script** with the values the user gave you:
+2. **Check the environment.** Run `scripts/check-env.ps1` (or `check-env.sh`). If
+   it flags a missing tool, stop and offer the user the install commands it prints
+   before continuing — don't init against an environment that can't build or test.
+3. **Run the init script** with the values the user gave you:
 
    ```pwsh
    pwsh ./scripts/init.ps1 -ProjectName Acme.Widgets -Author "Jane Doe" -GitHubOwner acme -Description "Widget toolkit"
@@ -93,7 +100,7 @@ Read this even if you do nothing else. **It fails silently.**
    `docs/AGENT-INIT-GUIDE.md` (and itself unless `-KeepScript`). It does **not**
    change what is tracked — making the agent files local is a separate by-hand
    step (see below).
-3. **Verify**:
+4. **Verify**:
 
    ```pwsh
    dotnet tool restore
@@ -101,14 +108,14 @@ Read this even if you do nothing else. **It fails silently.**
    dotnet test  Acme.Widgets.slnx
    dotnet fantomas --check src tests
    ```
-4. Replace the placeholder `Greeter` module with the real API, delete the sample
+5. Replace the placeholder `Greeter` module with the real API, delete the sample
    test, fill in the `CLAUDE.md` "Architecture" section, and work through the
    `TEMPLATE.md` post-setup checklist.
-5. **Make the agent-instruction files local** — git-ignore and untrack
+6. **Make the agent-instruction files local** — git-ignore and untrack
    `AGENTS.md` / `CLAUDE.md` / `.claude/` so they stay on disk but never reach the
    remote, then commit. This is a by-hand step; see
    [Keep agent-instruction files local](#keep-agent-instruction-files-local-to-the-new-repo).
-6. Remove build artifacts (`bin/`, `obj/`, any `artifacts/`) before finishing.
+7. Remove build artifacts (`bin/`, `obj/`, any `artifacts/`) before finishing.
 
 If the user only asks to "initialize from the template" with a project name and
 nothing structurally unusual, **this is the whole job.** Resist the urge to

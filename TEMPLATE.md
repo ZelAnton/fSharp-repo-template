@@ -16,7 +16,23 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
 
 1. Create a new repository from this one (GitHub: **Use this template**), or copy
    the files into a fresh repo.
-2. Run the init script once to stamp your project name in:
+2. **Check your environment is ready.** Before initializing, confirm this machine
+   has the toolchain to build and test an F# project. Use whichever matches your
+   shell:
+
+   ```pwsh
+   pwsh ./scripts/check-env.ps1
+   ```
+
+   ```bash
+   bash ./scripts/check-env.sh
+   ```
+
+   It checks for the .NET SDK (the major band pinned in `global.json`). If
+   anything required is missing it lists the install commands for your OS and
+   exits non-zero — install what it names, then re-run it. **Don't run init until
+   it reports the environment is ready.**
+3. Run the init script once to stamp your project name in:
 
    ```pwsh
    pwsh ./scripts/init.ps1 -ProjectName Acme.Widgets -Author "Jane Doe" -GitHubOwner acme -Description "Widget toolkit"
@@ -39,7 +55,7 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
    - deletes `TEMPLATE.md`, `docs/AGENT-INIT-GUIDE.md`, and (unless
      `-KeepScript` / `--keep-script`) both initializers (`init.ps1` and
      `init.sh`).
-3. Verify:
+4. Verify:
 
    ```pwsh
    dotnet tool restore
@@ -47,9 +63,9 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
    dotnet test  Acme.Widgets.slnx
    ```
 
-4. Replace the placeholder `Greeter` module in `src/...` with your real API and
+5. Replace the placeholder `Greeter` module in `src/...` with your real API and
    delete the sample test.
-5. **Make the agent-instruction files local to your repo.** `AGENTS.md`,
+6. **Make the agent-instruction files local to your repo.** `AGENTS.md`,
    `CLAUDE.md`, and `.claude/` are local guidance for tools, not something to
    publish — in *your* generated repo, untrack and ignore them so each developer
    keeps their own and they never reach the remote. (They stay tracked in the
@@ -182,7 +198,7 @@ project.
 
 - [ ] Agent-instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/`) git-ignored
       and untracked so they stay local and never reach the remote — done by hand
-      before the first push (step 5 above); verify with `git status` / `jj st`.
+      before the first push (step 6 above); verify with `git status` / `jj st`.
 - [ ] `NUGET_API_KEY` repo secret added (only if publishing to NuGet), or
       NuGet Trusted Publishing (OIDC) configured — see `release.yml`.
 - [ ] LICENSE author/year and license choice reviewed.
