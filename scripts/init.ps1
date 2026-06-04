@@ -4,10 +4,10 @@
     Initializes this template into a concrete F# project.
 
 .DESCRIPTION
-    Replaces the placeholder tokens (__ProjectName__, __Author__, __GitHubOwner__,
-    __Description__, __Year__) in file contents AND in file/folder names, then
+    Replaces the placeholder tokens (__ProjectName__, __Author__, __AuthorEmail__,
+    __GitHubOwner__, __Description__, __Year__) in file contents AND in file/folder names, then
     removes the template-only files (TEMPLATE.md, docs/AGENT-INIT-GUIDE.md, and,
-    unless -KeepScript, this script itself).
+    unless -KeepScript, both initializers — this script and init.sh).
 
     Run it once, right after creating a repository from the template:
 
@@ -22,6 +22,9 @@
 
 .PARAMETER Author
     Author for LICENSE and the .fsproj. Defaults to `git config user.name`, else "Your Name".
+
+.PARAMETER AuthorEmail
+    Author email for the release commit. Defaults to `git config user.email`, else "you@example.com".
 
 .PARAMETER GitHubOwner
     GitHub owner/org used in repository URLs. Defaults to "your-org".
@@ -43,6 +46,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ProjectName,
     [string]$Author,
+    [string]$AuthorEmail,
     [string]$GitHubOwner,
     [string]$Description,
     [int]$Year = (Get-Date).Year,
@@ -59,6 +63,10 @@ if (-not $Author) {
     $Author = (& git config user.name 2>$null)
     if (-not $Author) { $Author = 'Your Name' }
 }
+if (-not $AuthorEmail) {
+    $AuthorEmail = (& git config user.email 2>$null)
+    if (-not $AuthorEmail) { $AuthorEmail = 'you@example.com' }
+}
 if (-not $GitHubOwner) { $GitHubOwner = 'your-org' }
 if (-not $Description) { $Description = 'TODO: project description' }
 
@@ -68,6 +76,7 @@ $selfPath = $PSCommandPath
 $replacements = [ordered]@{
     '__ProjectName__' = $ProjectName
     '__Author__'      = $Author
+    '__AuthorEmail__' = $AuthorEmail
     '__GitHubOwner__' = $GitHubOwner
     '__Description__' = $Description
     '__Year__'        = "$Year"
@@ -93,9 +102,12 @@ function Test-Excluded([string]$fullPath) {
 
 Write-Host "==> Initializing template as '$ProjectName'" -ForegroundColor Cyan
 
-# 1) Replace tokens in file contents (this script is left untouched).
+# 1) Replace tokens in file contents. Both initializers are skipped: they carry
+#    the literal token strings as search keys, so substituting inside them would
+#    corrupt the sibling script (which -KeepScript leaves on disk).
+$siblingShPath = Join-Path $PSScriptRoot 'init.sh'
 $files = Get-ChildItem -Path $repoRoot -File -Recurse | Where-Object {
-    -not (Test-Excluded $_.FullName) -and $_.FullName -ne $selfPath
+    -not (Test-Excluded $_.FullName) -and $_.FullName -ne $selfPath -and $_.FullName -ne $siblingShPath
 }
 $contentChanged = 0
 foreach ($file in $files) {
@@ -136,6 +148,12 @@ foreach ($rel in @('TEMPLATE.md', 'docs/AGENT-INIT-GUIDE.md')) {
     $path = Join-Path $repoRoot $rel
     if (Test-Path $path) { Remove-Item -LiteralPath $path -Force }
 }
+# Drop docs/ if it's now empty (it may still hold linux-testing.md, in which
+# case it is kept).
+$docsDir = Join-Path $repoRoot 'docs'
+if ((Test-Path $docsDir) -and -not (Get-ChildItem -LiteralPath $docsDir -Force)) {
+    Remove-Item -LiteralPath $docsDir -Force
+}
 
 Write-Host ""
 Write-Host "Done. Next steps:" -ForegroundColor Green
@@ -147,6 +165,9 @@ Write-Host "  5. NuGet publishing: add the NUGET_API_KEY repo secret, or delete"
 Write-Host "     .github/workflows/release.yml and the packaging properties in the .fsproj."
 Write-Host "  6. Commit the initialized project."
 
+# Remove both initializers unless asked to keep them.
 if (-not $KeepScript) {
+    $siblingSh = Join-Path $PSScriptRoot 'init.sh'
+    if (Test-Path $siblingSh) { Remove-Item -LiteralPath $siblingSh -Force }
     Remove-Item -LiteralPath $selfPath -Force
 }

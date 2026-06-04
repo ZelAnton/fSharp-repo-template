@@ -22,16 +22,23 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
    pwsh ./scripts/init.ps1 -ProjectName Acme.Widgets -Author "Jane Doe" -GitHubOwner acme -Description "Widget toolkit"
    ```
 
-   `-ProjectName` is required; the rest are optional and fall back to sensible
-   defaults (`git config user.name`, `your-org`, a TODO description, the current
-   year). The script:
+   On a POSIX shell (Linux/macOS, or git-bash) run the equivalent instead:
+
+   ```bash
+   bash ./scripts/init.sh --project-name Acme.Widgets --author "Jane Doe" --github-owner acme --description "Widget toolkit"
+   ```
+
+   `-ProjectName` / `--project-name` is required; the rest are optional and fall
+   back to sensible defaults (`git config user.name`, `git config user.email`,
+   `your-org`, a TODO description, the current year). The script:
    - replaces the placeholder tokens in every file's contents;
    - renames the token-named files and folders (`src/__ProjectName__`,
      `tests/__ProjectName__.Tests`, the `.fsproj`/`.slnx`/`.sln.DotSettings`);
    - activates `.claude/settings.json` from its shipped `.template` form
      (sane shared permissions for `dotnet` commands);
    - deletes `TEMPLATE.md`, `docs/AGENT-INIT-GUIDE.md`, and (unless
-     `-KeepScript`) itself.
+     `-KeepScript` / `--keep-script`) both initializers (`init.ps1` and
+     `init.sh`).
 3. Verify:
 
    ```pwsh
@@ -42,6 +49,28 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
 
 4. Replace the placeholder `Greeter` module in `src/...` with your real API and
    delete the sample test.
+5. **Make the agent-instruction files local to your repo.** `AGENTS.md`,
+   `CLAUDE.md`, and `.claude/` are local guidance for tools, not something to
+   publish — in *your* generated repo, untrack and ignore them so each developer
+   keeps their own and they never reach the remote. (They stay tracked in the
+   *template* repo; this is only for downstream repos.) The init script does
+   **not** do this — do it by hand, before the first push:
+
+   ```sh
+   # 1) Ignore them going forward. Append last so `.claude/` overrides the
+   #    earlier `!.claude/...` ship lines (last matching pattern wins).
+   printf '\n/AGENTS.md\n/CLAUDE.md\n.claude/\n' >> .gitignore
+   # 2) Stop tracking the copies the template committed (kept on disk).
+   git rm -r --cached AGENTS.md CLAUDE.md .claude   # jj: jj file untrack AGENTS.md CLAUDE.md .claude
+   git add .gitignore && git commit -m "Keep agent instructions local"   # commit the ignore rule *and* the removals together
+   ```
+
+   See [docs/AGENT-INIT-GUIDE.md](docs/AGENT-INIT-GUIDE.md) for why a `.gitignore`
+   rule alone won't untrack already-committed files, an optional zero-trace
+   variant, and the caveat that a repo created via **"Use this template"** already
+   carries these files in its initial commit on the remote — untracking keeps them
+   out of *later* commits only; for a truly clean history, copy the template into
+   a fresh `git init` and untrack before the first commit.
 
 ## Placeholder tokens
 
@@ -49,6 +78,7 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
 |---|---|
 | `__ProjectName__` | project / namespace / assembly / package id + file & folder names |
 | `__Author__` | author (LICENSE, `<Authors>`, `<Copyright>`) |
+| `__AuthorEmail__` | author email (release-commit identity in `release.yml`) |
 | `__GitHubOwner__` | GitHub owner/org in repository URLs |
 | `__Description__` | package description |
 | `__Year__` | copyright year |
@@ -144,6 +174,9 @@ project.
 
 ## Post-setup checklist
 
+- [ ] Agent-instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/`) git-ignored
+      and untracked so they stay local and never reach the remote — done by hand
+      before the first push (step 5 above); verify with `git status` / `jj st`.
 - [ ] `NUGET_API_KEY` repo secret added (only if publishing to NuGet), or
       NuGet Trusted Publishing (OIDC) configured — see `release.yml`.
 - [ ] LICENSE author/year and license choice reviewed.
@@ -151,7 +184,10 @@ project.
 - [ ] `SECURITY.md` reporting contact reviewed; `.github/CODEOWNERS` enabled if wanted.
 - [ ] GitHub **Settings → Security → Private vulnerability reporting** enabled (for `SECURITY.md`).
 - [ ] `CLAUDE.md` "Architecture" section written for your project.
-- [ ] Branch protection / required checks configured for `main` (CI).
-      If you require PRs or status checks on `main`, the release workflow's push of
-      the release commit will be blocked — give the release actor a bypass or add a
-      `RELEASE_TOKEN` secret (see the note in `.github/workflows/release.yml`).
+- [ ] Branch protection for `main` configured — require pull requests (plus CI
+      status checks). The agent docs (`CLAUDE.md` / `AGENTS.md`) already assume a
+      feature-branch + PR flow into `main`. Requiring PRs blocks the release workflow's
+      direct push of the release commit. The workflow pushes as a GitHub App when
+      configured — add repo variable `RELEASE_APP_ID` + secret `RELEASE_APP_PRIVATE_KEY`,
+      install the App, and add it to the ruleset's bypass list (recipe:
+      `release-token-bypass.md`).

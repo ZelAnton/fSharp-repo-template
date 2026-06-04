@@ -7,6 +7,25 @@
 - Tests live in `tests/__ProjectName__.Tests`.
 - Keep the repository focused; do not introduce CLI, UI, hosting, logging, or dependency injection infrastructure unless explicitly requested.
 
+## Agent instruction files are local-only in generated repos
+
+> **Scope:** this section is for a repository **created from this template**, not
+> the template itself. In the template, `AGENTS.md`, `CLAUDE.md`, and `.claude/`
+> stay **tracked and pushed** — that is how the guidance ships. If you are reading
+> this in the template repo, leave them tracked and do nothing.
+
+In a generated repo, `AGENTS.md`, `CLAUDE.md`, and `.claude/` are local guidance for whoever (human or agent) works in the clone — not project source. Keep them **git-ignored and untracked** so they stay on disk for tooling but never reach the remote; each developer keeps their own. This is a **by-hand step — the init script does not do it** — done **before the first push**:
+
+```bash
+# Append last so `.claude/` overrides the earlier `!.claude/...` ship lines.
+printf '\n/AGENTS.md\n/CLAUDE.md\n.claude/\n' >> .gitignore
+git rm -r --cached AGENTS.md CLAUDE.md .claude
+git add .gitignore && git commit -m "Keep agent instructions local"   # commit the ignore rule *and* the removals together
+# jj-colocated: jj file untrack AGENTS.md CLAUDE.md .claude  (folds .gitignore + removals into the working copy; no separate commit). It only accepts already-ignored paths, so write .gitignore first.
+```
+
+`git rm --cached` keeps the files on disk; an ignore rule alone won't untrack already-committed files. `init` deletes `TEMPLATE.md` and `docs/AGENT-INIT-GUIDE.md`, so this section is the surviving copy of the recipe downstream — consult that guide while it exists for the `.gitignore` precedence details, an optional zero-trace `.git/info/exclude` variant, and the caveat that a repo created via GitHub's *Use this template* already carries these files in its initial commit's history (untracking drops them from the tip only).
+
 ## Runtime
 
 - Use .NET (target framework `net10.0`).
@@ -228,28 +247,29 @@ This repository uses [jujutsu (`jj`)](https://jj-vcs.github.io/jj/) for version 
 - For larger work, fold subsequent small edits into the current change without asking the user — keep extending the same change rather than starting a new one for each follow-up.
 - If the scope of the current change shifts mid-work, refresh the description with another `jj describe -m "..."`. The description must always reflect what's actually being done.
 
+**Per-prompt evaluation (mandatory).** Before any edits, run `jj st` and classify the incoming prompt against the current change description:
+
+| Signal in prompt | Category | Action |
+|---|---|---|
+| Same topic, refinement, follow-up of in-progress work | **Continuation** | Just work. jj auto-folds edits into the current change. |
+| Same change but goal has been refined or expanded | **Scope shift** | `jj describe -m "<refined summary>"`. **Don't** start a new change. |
+| Orthogonal topic, different area, "теперь сделай X" | **New work** | If current change is finished → `jj new -m "<summary>"` (descendant). If still in progress → `jj new @- -m "..."` (parallel sibling). |
+
+Reliable signals: word changes like "теперь" / "now" / "next" / "также сделай" / "and also" usually mean **new work** or **scope shift**. Imperative follow-ups inside the same scope ("исправь это", "fix this", "продолжи") mean **continuation**. When in doubt, ask the user.
+
 ### Starting unrelated work
 
-If the user asks for something unrelated to the in-progress change:
-- **Current change is complete** → propose a new change descended from it:
-	```
-	jj new -m "Description of the new task"
-	```
-- **Current change still needs more work** → propose a parallel change off the same parent so the user can come back to the current one later:
-	```
-	jj new @- -m "Description of the unrelated task"
-	```
-- Do not silently mix the two — every change must stay coherent.
+When the per-prompt evaluation above classifies a prompt as **new work**, start a separate change rather than mixing topics: `jj new -m "..."` (descendant) if the current change is complete, or `jj new @- -m "..."` (parallel sibling) if it still needs more work so the user can return to it later. Do not silently mix the two — every change must stay coherent.
 
 ### Pushing to remote
 
 The user signals "synchronise with remote" with a short trigger word (typically `pull` or `push`). On that signal, run the full sync:
-1. `jj git fetch` — pull down any remote-side movement (e.g. CI release commits or other contributors' pushes) **before** doing anything else.
-2. If `main@origin` has moved past the local change, rebase: `jj rebase -r @- -d main@origin`.
-3. Move the `main` bookmark to the completed change: `jj bookmark set main -r <rev>`.
-4. Push: `jj git push --bookmark main`.
+1. `jj git fetch` — pull down remote movement (merged PRs, CI release commits, other contributors) **before** doing anything else.
+2. If `main@origin` has moved past the local change, rebase onto it: `jj rebase -r @- -d main@origin` (or `jj rebase -d main@origin` for a stack).
+3. Put the work on a **feature bookmark — never advance `main` locally to publish.** First push: `jj bookmark create <topic> -r @` then `jj git push --allow-new -b <topic>`. Later pushes: `jj bookmark move <topic> --to @` then `jj git push -b <topic>`.
+4. Open / update a pull request into `main` (`gh pr create --base main --head <topic> --fill`). `main` advances only when the PR merges; afterwards `jj git fetch` and `jj bookmark delete <topic>`.
 
-Never push without an explicit signal from the user.
+Never push without an explicit signal from the user. **Direct-push fallback:** where `main` is unprotected the old single-step flow still works — `jj bookmark move main --to @` then `jj git push -b main`; once PRs are required this is rejected for everyone except the release workflow's GitHub App, which sits in the ruleset's bypass list (`RELEASE_APP_ID` + `RELEASE_APP_PRIVATE_KEY`; see `release-token-bypass.md`).
 
 ### Undoing work
 
@@ -264,7 +284,7 @@ Never hide a deliberate undo: if the user asks to "undo the last commit/change",
 
 ### Bookmarks
 
-Work happens on `main`. **Do not create new bookmarks unless the user explicitly asks for one** (e.g. for a feature-branch / PR workflow). The default flow is push-to-main.
+Work is published through a **feature bookmark per PR** (short kebab-case topic name), merged into `main` via pull request — this keeps the flow compatible with branch protection on `main`. Create the bookmark when you're ready to push for review; `main` is never advanced locally to publish (it moves only via merged PRs and the release workflow's tagged commit). Where `main` is unprotected, a direct push to `main` stays a valid shortcut — see "Pushing to remote".
 
 ### Safety
 
