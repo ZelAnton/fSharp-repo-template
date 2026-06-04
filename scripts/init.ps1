@@ -109,8 +109,13 @@ $siblingShPath = Join-Path $PSScriptRoot 'init.sh'
 $files = Get-ChildItem -Path $repoRoot -File -Recurse | Where-Object {
     -not (Test-Excluded $_.FullName) -and $_.FullName -ne $selfPath -and $_.FullName -ne $siblingShPath
 }
+# Binary extensions are skipped: they carry no tokens, and reading them as text
+# (then rewriting) would corrupt them. The template ships none, but a downstream
+# user may add e.g. a strong-name key or icon before running init.
+$binaryExtensions = @('.snk', '.pfx', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.zip')
 $contentChanged = 0
 foreach ($file in $files) {
+    if ($binaryExtensions -contains $file.Extension) { continue }
     $text = [System.IO.File]::ReadAllText($file.FullName)
     $new = $text
     $map = if ($xmlFileExtensions -contains $file.Extension) { $xmlReplacements } else { $replacements }

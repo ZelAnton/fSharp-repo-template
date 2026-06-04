@@ -406,7 +406,11 @@ jobs:
       # operator to finish by hand rather than re-running.
       - name: Create or update the GitHub Release (idempotent)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use the App token when configured (consistent with the push above and
+          # robust if the org restricts the default GITHUB_TOKEN); fall back to
+          # GITHUB_TOKEN otherwise. Creating a Release needs only contents: write,
+          # which both identities have.
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail

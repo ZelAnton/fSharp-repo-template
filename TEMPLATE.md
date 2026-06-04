@@ -103,19 +103,25 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
 ## Optional pieces — remove what you don't need
 
 - **NuGet publishing** — if this is an app or internal library, delete
-  `.github/workflows/release.yml` and the packaging properties in the `.fsproj`
+  `.github/workflows/release.yml`, `release-token-bypass.md` (the release-only
+  protected-`main` recipe), and the packaging properties in the `.fsproj`
   (`PackageId`, `Authors`, `Description`, URLs, symbols, SourceLink, the README/
   CHANGELOG `Pack` items). Keep `Directory.Build.props` and CI.
 - **Linux testing from Windows** — delete `scripts/test-linux.ps1` and
   `docs/linux-testing.md` if you don't need to run the Linux code path locally.
 - **Rider settings** — delete `__ProjectName__.sln.DotSettings` if you don't use
   Rider/ReSharper.
-- **SDK pin** — `global.json` pins the .NET SDK feature band (10.0.1xx and up via
+- **SDK pin** — `global.json` pins the .NET SDK feature band (10.0.3xx and up via
   `rollForward: latestFeature`) so builds are reproducible and a contributor on an
-  older SDK gets a clear error instead of confusing failures. Bump it when you move
-  to a newer band; delete it to always use whatever SDK is installed. (The F#
-  compiler ships with the SDK, so the FSharp.Core pin in `Directory.Packages.props`
-  should track this band — see [AGENTS.md](AGENTS.md).)
+  older SDK gets a clear error instead of confusing failures. The band is pinned
+  one notch higher than the C# template's (10.0.1xx) on purpose: the F# compiler
+  ships with the SDK, and the `FSharp.Core` pin in `Directory.Packages.props`
+  (`10.1.300`) is the version bundled with the **10.0.3xx** band — pinning a lower
+  floor would let a contributor compile against an older bundled FSharp.Core while
+  the project deploys the pinned one (the version-mismatch trap described in
+  [AGENTS.md](AGENTS.md)). Keep the two in lockstep: when you bump this band, bump
+  the FSharp.Core pin to the version that band bundles. Delete `global.json` to
+  always use whatever SDK is installed.
 - **Dependency updates** — `.github/dependabot.yml` opens weekly PRs to bump GitHub
   Actions and the central NuGet versions in `Directory.Packages.props`. Action and
   NuGet bumps are each grouped into a single weekly PR. Remove it if you update
