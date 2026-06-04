@@ -126,7 +126,7 @@ This is the one F# dependency rule that is easy to get wrong and fails silently.
 - `.editorconfig` is the source of truth for indentation and line endings — follow it.
 - **F# source (`.fs`/`.fsi`/`.fsx`) uses SPACES, never tabs.** The F# compiler rejects tab characters in indentation; a tab in a `.fs` file is a compile error. This is the deliberate exception to the tabs-everywhere convention of the sibling C# template.
 - MSBuild/XML (`.fsproj`/`.props`/`.targets`/`.slnx`), `.json`, and `.config` use tabs.
-- YAML (`.yml`/`.yaml`) and PowerShell (`.ps1`) use spaces, per `.editorconfig` (tabs are invalid in YAML).
+- YAML (`.yml`/`.yaml`), PowerShell (`.ps1`), and shell scripts (`.sh`) use spaces, per `.editorconfig` (tabs are invalid in YAML).
 - Do not mix tabs and spaces for indentation within a file.
 - Preserve LF line endings, except Windows batch files (`.cmd`/`.bat`) which require CRLF.
 - **Fantomas is the formatter.** Run `dotnet tool restore` once, then `dotnet fantomas src tests` to format and `dotnet fantomas --check src tests` to verify. CI fails on unformatted F#. Fantomas reads the `fsharp_*` keys in `.editorconfig`.

@@ -29,7 +29,7 @@ fsharp_align_function_signature_to_indentation = false
 end_of_line = crlf
 tab_width = 2
 
-[*.{xml,fsproj,props,targets,config}]
+[*.{xml,fsproj,props,targets,slnx,config}]
 indent_style = tab
 indent_size = 2
 tab_width = 2
@@ -43,6 +43,13 @@ tab_width = 2
 indent_style = space
 indent_size = 4
 tab_width = 4
+
+# Shell scripts (init.sh, check-env.sh) are space-indented (2). Without this they
+# fall under [*] = tabs, contradicting the actual files.
+[*.sh]
+indent_style = space
+indent_size = 2
+tab_width = 2
 
 [*.{yaml,yml}]
 indent_style = space
