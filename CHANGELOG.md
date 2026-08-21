@@ -14,6 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -
 
 ### Fixed
--
+- Release retries now verify the published package contents and repository commit before reusing an existing NuGet version.
 
 [Unreleased]: https://github.com/__GitHubOwner__/__ProjectName__/commits/main
