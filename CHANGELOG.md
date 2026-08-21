@@ -14,6 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -
 
 ### Fixed
--
+- Pass Linux test-helper `-Filter` values as data so shell metacharacters cannot inject Bash commands.
 
 [Unreleased]: https://github.com/__GitHubOwner__/__ProjectName__/commits/main
