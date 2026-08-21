@@ -17,6 +17,9 @@ from typing import NoReturn
 from xml.etree import ElementTree
 
 
+PUBLISHER_SIGNATURE_NAME = ".signature.p7s"
+
+
 def fail(message: str) -> NoReturn:
     print(f"::error::{message}", file=sys.stderr)
     raise SystemExit(1)
@@ -27,6 +30,8 @@ def content_sha256(path: pathlib.Path) -> str:
     try:
         with zipfile.ZipFile(path) as archive:
             for name in sorted(archive.namelist()):
+                if name == PUBLISHER_SIGNATURE_NAME:
+                    continue
                 canonical_name = re.sub(
                     r"package/services/metadata/core-properties/[0-9a-f]+\.psmdcp$",
                     "package/services/metadata/core-properties/IDENTITY.psmdcp",

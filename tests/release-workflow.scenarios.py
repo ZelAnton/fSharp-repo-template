@@ -21,7 +21,14 @@ def run(command: list[str], cwd: pathlib.Path, check: bool = True) -> subprocess
     return subprocess.run(command, cwd=cwd, check=check, text=True, capture_output=True)
 
 
-def make_package(path: pathlib.Path, package_id: str, version: str, commit: str, payload: str) -> None:
+def make_package(
+    path: pathlib.Path,
+    package_id: str,
+    version: str,
+    commit: str,
+    payload: str,
+    signature: bytes | None = None,
+) -> None:
     nuspec = f"""<?xml version="1.0" encoding="utf-8"?>
 <package>
   <metadata>
@@ -34,6 +41,8 @@ def make_package(path: pathlib.Path, package_id: str, version: str, commit: str,
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(f"{package_id}.nuspec", nuspec)
         archive.writestr("lib/net10.0/package.txt", payload)
+        if signature is not None:
+            archive.writestr(".signature.p7s", signature)
 
 
 class FeedHandler(http.server.BaseHTTPRequestHandler):
@@ -102,9 +111,18 @@ class ReleaseWorkflowScenarios(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             package = root / "Acme.Widgets.1.2.3.nupkg"
+            published = root / "published.nupkg"
             make_package(package, "Acme.Widgets", "1.2.3", "a" * 40, "release")
+            make_package(
+                published,
+                "Acme.Widgets",
+                "1.2.3",
+                "a" * 40,
+                "release",
+                signature=b"NuGet.org repository signature",
+            )
             output = root / "first-output.txt"
-            with Feed([(404, b""), (200, package.read_bytes())]) as feed:
+            with Feed([(404, b""), (200, published.read_bytes())]) as feed:
                 first = verify(package, "a" * 40, feed, allow_missing=True, output=output)
                 second = verify(package, "a" * 40, feed, output=output)
 
@@ -119,7 +137,14 @@ class ReleaseWorkflowScenarios(unittest.TestCase):
             local = root / "local.nupkg"
             remote = root / "remote.nupkg"
             make_package(local, "Acme.Widgets", "1.2.3", "b" * 40, "release")
-            make_package(remote, "Acme.Widgets", "1.2.3", "b" * 40, "different")
+            make_package(
+                remote,
+                "Acme.Widgets",
+                "1.2.3",
+                "b" * 40,
+                "different",
+                signature=b"NuGet.org repository signature",
+            )
             with Feed([(200, remote.read_bytes())]) as feed:
                 result = verify(local, "b" * 40, feed)
             self.assertNotEqual(result.returncode, 0)
@@ -158,7 +183,14 @@ class ReleaseWorkflowScenarios(unittest.TestCase):
             local = root / "local.nupkg"
             occupied = root / "occupied.nupkg"
             make_package(local, "Acme.Widgets", "1.2.3", "c" * 40, "release")
-            make_package(occupied, "Acme.Widgets", "1.2.3", "d" * 40, "release")
+            make_package(
+                occupied,
+                "Acme.Widgets",
+                "1.2.3",
+                "d" * 40,
+                "release",
+                signature=b"NuGet.org repository signature",
+            )
             with Feed([(200, occupied.read_bytes())]) as feed:
                 result = verify(local, "c" * 40, feed)
             self.assertNotEqual(result.returncode, 0)
