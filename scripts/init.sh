@@ -37,14 +37,73 @@ keep_script=0
 
 die() { echo "error: $*" >&2; exit 1; }
 
+require_option_value() {
+  local option="$1"
+  [ "$#" -ge 2 ] || die "$option requires a value."
+  case "$2" in
+    -*)
+      if [ "$option" != '--year' ]; then
+        die "$option requires a value."
+      fi
+      case "$2" in
+        -[0-9]*) ;;
+        *) die "$option requires a value." ;;
+      esac
+      ;;
+  esac
+}
+
+require_integer_value() {
+  local option="$1"
+  local value="$2"
+  local digits
+  case "$value" in
+    [0-9]*) digits="$value" ;;
+    +[0-9]*) digits="${value#+}" ;;
+    -[0-9]*) digits="${value#-}" ;;
+    *) die "invalid $option '$value'. Use a numeric year (e.g. $(date +%Y))." ;;
+  esac
+  case "$value" in
+    *[!0-9+-]*) die "invalid $option '$value'. Use a numeric year (e.g. $(date +%Y))." ;;
+  esac
+  case "$digits" in
+    ''|*[!0-9]*) die "invalid $option '$value'. Use a numeric year (e.g. $(date +%Y))." ;;
+  esac
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --project-name)  project_name="${2:-}"; shift 2 ;;
-    --author)        author="${2:-}"; shift 2 ;;
-    --author-email)  author_email="${2:-}"; shift 2 ;;
-    --github-owner)  github_owner="${2:-}"; shift 2 ;;
-    --description)   description="${2:-}"; shift 2 ;;
-    --year)          year="${2:-}"; shift 2 ;;
+    --project-name)
+      require_option_value "$@"
+      project_name="$2"
+      shift 2
+      ;;
+    --author)
+      require_option_value "$@"
+      author="$2"
+      shift 2
+      ;;
+    --author-email)
+      require_option_value "$@"
+      author_email="$2"
+      shift 2
+      ;;
+    --github-owner)
+      require_option_value "$@"
+      github_owner="$2"
+      shift 2
+      ;;
+    --description)
+      require_option_value "$@"
+      description="$2"
+      shift 2
+      ;;
+    --year)
+      require_option_value "$@"
+      require_integer_value "--year" "$2"
+      year="$2"
+      shift 2
+      ;;
     --keep-script)   keep_script=1; shift ;;
     -h|--help)       sed -n '2,20p' "$0"; exit 0 ;;
     *)               die "unknown argument: $1" ;;
