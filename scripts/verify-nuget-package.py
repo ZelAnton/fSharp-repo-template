@@ -89,6 +89,11 @@ def main() -> None:
     parser.add_argument("--version", required=True)
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--allow-missing", action="store_true")
+    parser.add_argument(
+        "--feed-base-url",
+        default="https://api.nuget.org/v3-flatcontainer",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--github-output")
     args = parser.parse_args()
 
@@ -106,24 +111,25 @@ def main() -> None:
     package_id = urllib.parse.quote(args.package_id.lower(), safe="")
     version = urllib.parse.quote(args.version.lower(), safe="")
     url = (
-        f"https://api.nuget.org/v3-flatcontainer/{package_id}/{version}/"
+        f"{args.feed_base_url.rstrip('/')}/{package_id}/{version}/"
         f"{package_id}.{version}.nupkg"
     )
 
+    downloaded_path: pathlib.Path | None = None
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
-            with tempfile.NamedTemporaryFile(suffix=".nupkg") as downloaded:
+            with tempfile.NamedTemporaryFile(suffix=".nupkg", delete=False) as downloaded:
+                downloaded_path = pathlib.Path(downloaded.name)
                 while chunk := response.read(1024 * 1024):
                     downloaded.write(chunk)
                 downloaded.flush()
-                existing = pathlib.Path(downloaded.name)
-                actual_sha = content_sha256(existing)
-                if actual_sha != expected_sha:
-                    fail(
-                        f"NuGet package {args.package_id} {args.version} has content digest "
-                        f"{actual_sha}, expected {expected_sha}"
-                    )
-                remote_commit = repository_commit(existing)
+            actual_sha = content_sha256(downloaded_path)
+            if actual_sha != expected_sha:
+                fail(
+                    f"NuGet package {args.package_id} {args.version} has content digest "
+                    f"{actual_sha}, expected {expected_sha}"
+                )
+            remote_commit = repository_commit(downloaded_path)
     except urllib.error.HTTPError as error:
         if error.code == 404 and args.allow_missing:
             print(f"No existing NuGet package found for {args.package_id} {args.version}.")
@@ -134,6 +140,12 @@ def main() -> None:
         fail(f"NuGet package lookup failed with HTTP {error.code}; refusing to continue")
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         fail(f"NuGet package lookup failed; refusing to continue: {error}")
+    finally:
+        if downloaded_path is not None:
+            try:
+                downloaded_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     if remote_commit.lower() != args.expected_commit.lower():
         fail(
