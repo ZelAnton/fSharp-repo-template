@@ -5,10 +5,11 @@
     initialize the template.
 
 .DESCRIPTION
-    Verifies the .NET SDK is installed and new enough (the major band pinned in
-    global.json). Prints "Environment ready" and exits 0 on success; if a required
-    tool is missing it prints per-OS install commands and exits 1 — install what it
-    names, then re-run. (Fantomas is a local tool restored by `dotnet tool restore`,
+    Asks the .NET host to resolve the SDK configuration pinned in global.json.
+    Prints "Environment ready" and exits 0 on success; if a required tool is
+    missing or the SDK configuration cannot be resolved, it prints per-OS install
+    commands and exits 1 — install what it names, then re-run. (Fantomas is a
+    local tool restored by `dotnet tool restore`,
     not a separate environment prerequisite, so it is not checked here.)
 
     Run it first, before scripts/init.ps1:
@@ -23,30 +24,63 @@ $problems = @()
 
 Write-Host "==> Checking environment for F# (.NET) development" -ForegroundColor Cyan
 
-# Required .NET major version — read from global.json when present, else default.
-$requiredMajor = 10
-$globalJson = Join-Path (Join-Path $PSScriptRoot '..') 'global.json'
-if (Test-Path $globalJson) {
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$globalJson = Join-Path $repoRoot 'global.json'
+$globalJsonMissing = -not (Test-Path -LiteralPath $globalJson -PathType Leaf)
+$configuredSdkVersion = $null
+$configuredSdkMajor = $null
+$configurationError = $null
+
+# Required: the .NET SDK (it bundles the F# compiler and `dotnet test`).
+if ($globalJsonMissing) {
+    $problems += "the SDK configuration file '$globalJson' is missing"
+} else {
     try {
-        $v = (Get-Content -Raw $globalJson | ConvertFrom-Json).sdk.version
-        if ($v -match '^(\d+)\.') { $requiredMajor = [int]$Matches[1] }
-    } catch {
-        # global.json unreadable/edited - fall back to the default major above.
+        $config = Get-Content -LiteralPath $globalJson -Raw | ConvertFrom-Json
+        if ($null -eq $config.sdk -or $null -eq $config.sdk.version) {
+            throw 'global.json must define sdk.version'
+        }
+
+        $configuredSdkVersion = [string]$config.sdk.version
+        if ([string]::IsNullOrWhiteSpace($configuredSdkVersion) -or
+            $configuredSdkVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
+            throw "sdk.version '$configuredSdkVersion' is not a valid SDK version"
+        }
+
+        $configuredSdkMajor = ($configuredSdkVersion -split '\.')[0]
+    }
+    catch {
+        $configurationError = $_.Exception.Message
     }
 }
 
-# Required: the .NET SDK (it bundles the F# compiler and `dotnet test`).
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    $problems += "the .NET SDK ('dotnet' is not on PATH)"
-} else {
-    $haveMajor = $false
-    foreach ($line in (& dotnet --list-sdks)) {
-        if ($line -match '^(\d+)\.' -and [int]$Matches[1] -ge $requiredMajor) { $haveMajor = $true }
-    }
-    if ($haveMajor) {
-        Write-Host "    .NET SDK $requiredMajor+ found" -ForegroundColor DarkGray
+if ($null -ne $configurationError) {
+    $problems += "invalid SDK configuration in '$globalJson': $configurationError"
+} elseif (-not $globalJsonMissing) {
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        $problems += "the .NET SDK ('dotnet' is not on PATH)"
     } else {
-        $problems += "a .NET $requiredMajor SDK (dotnet found, but no installed SDK >= $requiredMajor)"
+        Push-Location $repoRoot
+        $nativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+        try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $sdkOutput = @(& dotnet --version 2>&1)
+            $sdkExitCode = $LASTEXITCODE
+        }
+        finally {
+            $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+            Pop-Location
+        }
+
+        if ($sdkExitCode -eq 0 -and $sdkOutput.Count -gt 0) {
+            $resolvedSdk = [string]$sdkOutput[-1]
+            Write-Host "    .NET SDK $resolvedSdk resolved from global.json" -ForegroundColor DarkGray
+        } else {
+            $problems += "the SDK configuration in '$globalJson' could not be resolved by dotnet"
+            foreach ($line in $sdkOutput) {
+                Write-Host "    $line" -ForegroundColor DarkGray
+            }
+        }
     }
 }
 
@@ -65,8 +99,12 @@ Write-Host ""
 Write-Host "Environment NOT ready. Missing:" -ForegroundColor Red
 foreach ($p in $problems) { Write-Host "  - $p" -ForegroundColor Red }
 Write-Host ""
-Write-Host "Install the .NET $requiredMajor SDK, then re-run this check:" -ForegroundColor Yellow
-Write-Host "  Windows : winget install Microsoft.DotNet.SDK.$requiredMajor"
-Write-Host "  macOS   : brew install --cask dotnet-sdk"
-Write-Host "  Linux   : see https://learn.microsoft.com/dotnet/core/install/linux"
+if ($null -ne $configuredSdkVersion) {
+    Write-Host "Install the .NET SDK $configuredSdkVersion, then re-run this check:" -ForegroundColor Yellow
+    Write-Host "  Windows : winget install Microsoft.DotNet.SDK.$configuredSdkMajor"
+    Write-Host "  macOS   : brew install --cask dotnet-sdk"
+    Write-Host "  Linux   : see https://learn.microsoft.com/dotnet/core/install/linux"
+} else {
+    Write-Host "Fix the SDK configuration in '$globalJson', then re-run this check." -ForegroundColor Yellow
+}
 exit 1
