@@ -57,18 +57,41 @@ require_integer_value() {
   local option="$1"
   local value="$2"
   local digits
+  local negative=0
+  local limit
+  local LC_ALL=C
+
+  invalid_year() {
+    die "invalid $option '$value'. Use a numeric year (e.g. $(date +%Y))."
+  }
+
   case "$value" in
     [0-9]*) digits="$value" ;;
     +[0-9]*) digits="${value#+}" ;;
-    -[0-9]*) digits="${value#-}" ;;
-    *) die "invalid $option '$value'. Use a numeric year (e.g. $(date +%Y))." ;;
+    -[0-9]*) negative=1; digits="${value#-}" ;;
+    *) invalid_year ;;
   esac
   case "$value" in
-    *[!0-9+-]*) die "invalid $option '$value'. Use a numeric year (e.g. $(date +%Y))." ;;
+    *[!0-9+-]*) invalid_year ;;
   esac
   case "$digits" in
-    ''|*[!0-9]*) die "invalid $option '$value'. Use a numeric year (e.g. $(date +%Y))." ;;
+    ''|*[!0-9]*) invalid_year ;;
   esac
+
+  while [ "${#digits}" -gt 1 ] && [ "${digits#0}" != "$digits" ]; do
+    digits="${digits#0}"
+  done
+
+  if [ "$negative" -eq 1 ]; then
+    limit=2147483648
+  else
+    limit=2147483647
+  fi
+  if [ "${#digits}" -gt "${#limit}" ] || {
+    [ "${#digits}" -eq "${#limit}" ] && [[ "$digits" > "$limit" ]]
+  }; then
+    invalid_year
+  fi
 }
 
 while [ $# -gt 0 ]; do

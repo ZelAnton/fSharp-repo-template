@@ -54,6 +54,33 @@ run_failure_case() {
   }
 }
 
+run_success_case() {
+  local name="$1"
+  local expected_year="$2"
+  shift 2
+
+  local checkout="$test_root/$name"
+  mkdir -p "$checkout"
+  (
+    cd "$repo_root"
+    tar --exclude='./.git' --exclude='*/bin' --exclude='*/obj' -cf - .
+  ) | (
+    cd "$checkout"
+    tar -xf -
+  )
+
+  local output
+  output="$(cd "$checkout" && bash scripts/init.sh "$@" 2>&1)"
+  printf '%s\n' "$output" | grep -F "Done. Next steps:" >/dev/null || {
+    printf 'missing success output for %s: %s\n' "$name" "$output" >&2
+    return 1
+  }
+  grep -F "Copyright (c) $expected_year" "$checkout/LICENSE" >/dev/null || {
+    printf 'year was not written for %s\n' "$name" >&2
+    return 1
+  }
+}
+
 value_options=(--project-name --author --author-email --github-owner --description --year)
 for option in "${value_options[@]}"; do
   if [ "$option" = '--project-name' ]; then
@@ -74,5 +101,14 @@ done
 
 run_failure_case 'invalid-year' "invalid --year 'not-a-year'" \
   --project-name Acme.Widgets --year not-a-year
+
+run_success_case 'year-upper-boundary' '2147483647' \
+  --project-name Acme.Widgets --year 2147483647 --keep-script
+run_success_case 'year-lower-boundary' '-2147483648' \
+  --project-name Acme.Widgets --year -2147483648 --keep-script
+run_failure_case 'year-above-upper-boundary' "invalid --year '2147483648'" \
+  --project-name Acme.Widgets --year 2147483648 --keep-script
+run_failure_case 'year-below-lower-boundary' "invalid --year '-2147483649'" \
+  --project-name Acme.Widgets --year -2147483649 --keep-script
 
 printf 'Bash initializer CLI regression checks passed.\n'
