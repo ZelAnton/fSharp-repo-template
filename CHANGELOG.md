@@ -14,5 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Release retries now verify the published package contents and repository commit before reusing an existing NuGet version.
 - PowerShell initialization now replaces tokens in hidden files and renames hidden token-named paths.
+- Reject missing, option-like, and non-numeric Bash initializer values before changing the checkout.
 
 [Unreleased]: https://github.com/__GitHubOwner__/__ProjectName__/commits/main

@@ -45,6 +45,9 @@ jobs:
       # SHA and updates the comment on its weekly run.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
+      - name: Test Bash initializer CLI
+        run: bash tests/init-cli.sh
+
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.x'
