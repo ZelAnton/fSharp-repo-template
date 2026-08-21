@@ -31,3 +31,12 @@ Useful switches:
 pwsh ./scripts/test-linux.ps1 -Filter "FullyQualifiedName~greet"
 pwsh ./scripts/test-linux.ps1 -Configuration Debug -Rebuild
 ```
+
+The optional `-Filter` value is passed to the container as data, so shell
+metacharacters in a valid test expression are not interpreted as Bash syntax.
+
+To run the helper's argument-boundary regression checks without Docker, use:
+
+```pwsh
+pwsh ./scripts/test-linux-regression.ps1
+```

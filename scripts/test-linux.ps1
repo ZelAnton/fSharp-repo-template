@@ -72,7 +72,7 @@ if ($Rebuild) {
 $bashLines += "dotnet build -c $Configuration"
 $testCmd = "dotnet test --no-build -c $Configuration tests/__ProjectName__.Tests/__ProjectName__.Tests.fsproj"
 if ($Filter) {
-    $testCmd += " --filter `"$Filter`""
+    $testCmd += ' --filter "$1"'
 }
 $bashLines += $testCmd
 $bashScript = $bashLines -join "`n"
@@ -104,6 +104,9 @@ $dockerArgs += @(
     $Image,
     'bash', '-c', $bashScript
 )
+if ($Filter) {
+    $dockerArgs += @('--', $Filter)
+}
 
 Write-Host "==> Running tests in $Image" -ForegroundColor DarkGray
 Write-Host "    Repo:          $RepoRoot -> /src" -ForegroundColor DarkGray
