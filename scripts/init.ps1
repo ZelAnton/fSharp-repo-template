@@ -106,7 +106,7 @@ Write-Host "==> Initializing template as '$ProjectName'" -ForegroundColor Cyan
 #    the literal token strings as search keys, so substituting inside them would
 #    corrupt the sibling script (which -KeepScript leaves on disk).
 $siblingShPath = Join-Path $PSScriptRoot 'init.sh'
-$files = Get-ChildItem -Path $repoRoot -File -Recurse | Where-Object {
+$files = Get-ChildItem -Path $repoRoot -File -Recurse -Force | Where-Object {
     -not (Test-Excluded $_.FullName) -and $_.FullName -ne $selfPath -and $_.FullName -ne $siblingShPath
 }
 # Binary extensions are skipped: they carry no tokens, and reading them as text
@@ -131,7 +131,7 @@ Write-Host "    Updated contents in $contentChanged file(s)." -ForegroundColor D
 
 # 2) Rename files and folders whose name contains the project-name token.
 #    Deepest paths first so child renames don't invalidate parent paths.
-$named = Get-ChildItem -Path $repoRoot -Recurse | Where-Object {
+$named = Get-ChildItem -Path $repoRoot -Recurse -Force | Where-Object {
     -not (Test-Excluded $_.FullName) -and $_.Name -like '*__ProjectName__*'
 } | Sort-Object { $_.FullName.Length } -Descending
 foreach ($item in $named) {
