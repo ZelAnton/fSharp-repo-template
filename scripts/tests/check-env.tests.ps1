@@ -69,7 +69,9 @@ function Assert-Case {
         [Parameter(Mandatory)] [bool] $ShouldInvokeDotnet,
         [Parameter(Mandatory)] [string] $Runner,
         [Parameter(Mandatory)] [string] $FileName,
-        [Parameter(Mandatory)] [string[]] $Arguments
+        [Parameter(Mandatory)] [string[]] $Arguments,
+        [string] $ExpectedOutput = '',
+        [string] $ForbiddenOutput = ''
     )
 
     $globalJsonPath = Join-Path $fixtureRoot 'global.json'
@@ -124,6 +126,13 @@ function Assert-Case {
         }
     } elseif ($result.ExitCode -eq 0 -or $result.Output -match 'Environment ready' -or $result.Output -notmatch 'global\.json') {
         throw "$Runner/$Name should fail and name global.json. Output: $($result.Output)"
+    }
+
+    if ($ExpectedOutput -and $result.Output -notmatch [regex]::Escape($ExpectedOutput)) {
+        throw "$Runner/$Name should include '$ExpectedOutput'. Output: $($result.Output)"
+    }
+    if ($ForbiddenOutput -and $result.Output -match [regex]::Escape($ForbiddenOutput)) {
+        throw "$Runner/$Name should not include '$ForbiddenOutput'. Output: $($result.Output)"
     }
 
     Write-Host "PASS $Runner/$Name"
@@ -226,10 +235,40 @@ exit /b 2
         @{
             Name = 'malformed-global-json'
             Json = '{"sdk":{"version":"10.0.300"'
-            Result = 'failure'
+            Result = 'success'
             Version = '10.0.300'
             Success = $false
+            InvokeDotnet = $false
+        },
+        @{
+            Name = 'missing-sdk-version'
+            Json = '{}'
+            Result = 'success'
+            Version = '10.0.300'
+            Success = $false
+            InvokeDotnet = $false
+            ExpectedOutput = 'invalid SDK configuration'
+            ForbiddenOutput = 'Microsoft.DotNet.SDK.10'
+        },
+        @{
+            Name = 'invalid-sdk-version'
+            Json = '{"sdk":{"version":"not-a-version"}}'
+            Result = 'success'
+            Version = '10.0.300'
+            Success = $false
+            InvokeDotnet = $false
+            ExpectedOutput = 'not a valid SDK version'
+            ForbiddenOutput = 'Microsoft.DotNet.SDK.10'
+        },
+        @{
+            Name = 'configured-sdk-install-hint'
+            Json = '{"sdk":{"version":"8.0.100","rollForward":"disable"}}'
+            Result = 'failure'
+            Version = '8.0.100'
+            Success = $false
             InvokeDotnet = $true
+            ExpectedOutput = 'Microsoft.DotNet.SDK.8'
+            ForbiddenOutput = 'Microsoft.DotNet.SDK.10'
         },
         @{
             Name = 'missing-global-json'
@@ -238,13 +277,16 @@ exit /b 2
             Version = '10.0.300'
             Success = $false
             InvokeDotnet = $false
+            ExpectedOutput = 'Fix the SDK configuration'
+            ForbiddenOutput = 'Microsoft.DotNet.SDK.10'
         }
     )
 
     foreach ($case in $cases) {
         Assert-Case -Name $case.Name -GlobalJson $case.Json -HostResult $case.Result -ExpectedVersion $case.Version `
             -ShouldSucceed $case.Success -ShouldInvokeDotnet $case.InvokeDotnet -Runner 'PowerShell' `
-            -FileName (Get-Command pwsh).Source -Arguments @('-NoProfile', '-File', (Join-Path $fixtureRoot 'scripts/check-env.ps1'))
+            -FileName (Get-Command pwsh).Source -Arguments @('-NoProfile', '-File', (Join-Path $fixtureRoot 'scripts/check-env.ps1')) `
+            -ExpectedOutput $case.ExpectedOutput -ForbiddenOutput $case.ForbiddenOutput
     }
 
     if (-not $bash) {
@@ -254,7 +296,8 @@ exit /b 2
     foreach ($case in $cases) {
         Assert-Case -Name $case.Name -GlobalJson $case.Json -HostResult $case.Result -ExpectedVersion $case.Version `
             -ShouldSucceed $case.Success -ShouldInvokeDotnet $case.InvokeDotnet -Runner 'Bash' `
-            -FileName $bash.Source -Arguments @($bashScript)
+            -FileName $bash.Source -Arguments @($bashScript) `
+            -ExpectedOutput $case.ExpectedOutput -ForbiddenOutput $case.ForbiddenOutput
     }
 
     Write-Host 'All check-env regression tests passed.'
