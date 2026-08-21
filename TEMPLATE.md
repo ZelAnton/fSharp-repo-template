@@ -165,12 +165,14 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
   tokens (no stored secret). See the comment above the *Push to NuGet.org* step in
   `.github/workflows/release.yml`.
 - **Release ordering** — the NuGet publish is the single irreversible step, so the
-  workflow treats it as a pivot: build/test/pack and a *local-only* commit+tag run
-  first, the publish happens next, and the git push + GitHub Release run after it
-  (idempotent and retried). A failure before the publish leaves nothing on the
-  remote or registry, so a re-run is safe; a blocked git push after publish is
-  recovered by re-running (`--skip-duplicate` makes the republish a no-op). See the
-  ordering note at the top of `.github/workflows/release.yml`.
+  workflow treats it as a pivot: a local-only release commit+tag is created first,
+  the package is built from that exact commit, and the publish happens next. Before
+  any remote VCS or GitHub Release write, retries compare the existing NuGet package
+  contents and embedded repository commit with the current release identity; a
+  version-only duplicate or an unavailable lookup fails closed. See the ordering
+  note at the top of `.github/workflows/release.yml`. Once NuGet accepts the package,
+  the workflow uploads an immutable recovery bundle so a partial VCS/GitHub phase
+  can be completed without rebuilding from a moved `main`.
 - **No CodeQL** — CodeQL has no F# support, so there is no CodeQL workflow. Static
   hygiene relies on `TreatWarningsAsErrors` and Fantomas; wire up F# analyzers
   (e.g. Ionide analyzers) through `Directory.Build.props` if you want more.

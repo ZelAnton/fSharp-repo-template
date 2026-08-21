@@ -33,6 +33,10 @@ jobs:
       - name: Lint YAML
         run: yamllint .
 
+      - name: Check release workflow invariants
+        shell: pwsh
+        run: ./tests/release-workflow.tests.ps1
+
   format:
     runs-on: ubuntu-latest
     steps:

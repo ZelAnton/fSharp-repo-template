@@ -28,9 +28,10 @@ jobs:
       # Everything before it is cheap and reversible (build/test/pack, plus a LOCAL
       # commit+tag that is not yet pushed); everything after it (push the commit+tag
       # to main, create the GitHub Release) is reversible/recreatable and is made
-      # idempotent + retried. A failure before the pivot leaves no trace on the
-      # remote or registry — just re-run. A failure after the pivot is recoverable
-      # by re-run, EXCEPT once the tag is on main (see the Release step's note).
+      # idempotent + retried. A failure before NuGet accepts the package leaves no
+      # remote or registry trace and may be re-run. Once NuGet accepts the package,
+      # never re-run or rebuild this release, even if the tag push failed: recover
+      # only from this run's immutable release-recovery-vX.Y.Z artifact.
       #
       # The "Push the release commit + tag" step pushes straight to main. If you
       # protect main with a rule that requires pull requests or status checks, that
@@ -144,6 +145,19 @@ jobs:
             echo "::error::Tag ${{ steps.version.outputs.tag }} already exists"
             exit 1
           fi
+
+      # Keep retries on the same source tree deterministic. The release commit
+      # contains only generated version/changelog changes, so anchoring its dates
+      # to the source commit makes an unchanged main reproduce the same commit
+      # SHA; a moved main still produces a different identity and is rejected by
+      # the package verifier below.
+      - name: Capture release source identity
+        id: release-source
+        run: |
+          set -euo pipefail
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(git show -s --format=%cs HEAD)" >> "$GITHUB_OUTPUT"
+          echo "commit-date=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
 
       # Only git-cliff (next step) needs the previous tag, and only LOCALLY, to bound
       # its commit range. So when the previous tag is missing (the synthetic v0.0.0 of
@@ -265,31 +279,6 @@ jobs:
           print("----------------------------")
           PY
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --no-restore --configuration Release /p:Version=${{ steps.version.outputs.version }}
-
-      - name: Test
-        run: dotnet test --no-build --configuration Release
-
-      - name: Pack
-        run: dotnet pack src/__ProjectName__/__ProjectName__.fsproj --no-build --configuration Release --output ./artifacts /p:Version=${{ steps.version.outputs.version }}
-
-      - name: Generate SHA256SUMS
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          cd ./artifacts
-          files=(*.nupkg *.snupkg)
-          if [[ ${#files[@]} -eq 0 ]]; then
-            echo "::error::No package files to hash in ./artifacts."
-            exit 1
-          fi
-          sha256sum "${files[@]}" > SHA256SUMS
-          cat SHA256SUMS
-
       - name: Bump version in fsproj
         run: sed -i -E "s|<Version>[^<]+</Version>|<Version>${{ steps.version.outputs.version }}</Version>|" src/__ProjectName__/__ProjectName__.fsproj
 
@@ -298,6 +287,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
           PREV_TAG: v${{ steps.version.outputs.current }}
+          RELEASE_DATE: ${{ steps.release-source.outputs.date }}
         run: |
           set -euo pipefail
           python3 <<'PY'
@@ -305,12 +295,11 @@ jobs:
           import pathlib
           import re
           import sys
-          from datetime import datetime, timezone
 
           version = os.environ["VERSION"]
           tag = os.environ["TAG"]
           prev_tag = os.environ["PREV_TAG"]
-          date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+          date = os.environ["RELEASE_DATE"]
           repo = "https://github.com/__GitHubOwner__/__ProjectName__"
 
           path = pathlib.Path("CHANGELOG.md")
@@ -340,30 +329,92 @@ jobs:
           path.write_text(text)
           PY
 
-      # Create the release commit and tag LOCALLY, but do NOT push yet: the push is
-      # a VCS write and must happen AFTER the irreversible NuGet publish (the pivot
-      # below). Keeping it local means a failure before/at publish leaves nothing on
-      # the remote, so a fresh re-run starts clean.
+      # Create the release commit and tag locally, but do NOT push yet. The local
+      # identity is part of the package metadata and recovery bundle; only the VCS
+      # push and GitHub Release remain after NuGet accepts the package.
       - name: Commit and tag the release (local only)
+        id: release-identity
         run: |
           set -euo pipefail
           git config user.name "__Author__"
           git config user.email "__AuthorEmail__"
+          export GIT_AUTHOR_DATE="${{ steps.release-source.outputs.commit-date }}"
+          export GIT_COMMITTER_DATE="${{ steps.release-source.outputs.commit-date }}"
           git add src/__ProjectName__/__ProjectName__.fsproj CHANGELOG.md
           git commit -m "Release ${{ steps.version.outputs.tag }}"
           git tag "${{ steps.version.outputs.tag }}"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Keep the exact local release commit/tag available for post-pivot recovery.
+      - name: Create local release recovery bundle
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p ./artifacts
+          git bundle create ./artifacts/release-recovery.bundle HEAD "$TAG"
+          git bundle verify ./artifacts/release-recovery.bundle
+
+      # Build from the exact local release commit. SourceLink writes this commit
+      # into the package metadata; retries can therefore reject a package made
+      # from a moved main branch instead of trusting --skip-duplicate.
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release
+
+      - name: Pack
+        run: dotnet pack src/__ProjectName__/__ProjectName__.fsproj --no-build --configuration Release --output ./artifacts /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          cd ./artifacts
+          files=(*.nupkg *.snupkg)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "::error::No package files to hash in ./artifacts."
+            exit 1
+          fi
+          sha256sum "${files[@]}" > SHA256SUMS
+          cat SHA256SUMS
+
+      # A version-scoped duplicate is not proof that this run produced the same
+      # package. The verifier compares canonical package contents and its
+      # embedded repository commit. A moved main, occupied version, registry
+      # lookup failure, or different package fails before any VCS/GitHub write.
+      - name: Verify existing NuGet package identity
+        id: package-identity
+        env:
+          PACKAGE_ID: __ProjectName__
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.release-identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+          package=$(find ./artifacts -maxdepth 1 -type f -name '*.nupkg' -print -quit)
+          if [[ -z "$package" ]]; then
+            echo "::error::No .nupkg found in ./artifacts."
+            exit 1
+          fi
+          python3 scripts/verify-nuget-package.py \
+            --package "$package" \
+            --package-id "$PACKAGE_ID" \
+            --version "$VERSION" \
+            --expected-commit "$RELEASE_COMMIT" \
+            --allow-missing \
+            --github-output "$GITHUB_OUTPUT"
 
       # === PIVOT: the single irreversible step ===
       # NuGet publishing cannot be undone (a pushed version can only be unlisted,
       # never re-pushed), so it is the pivot and every reversible action is ordered
       # around it. It runs BEFORE the git push and the GitHub Release: if it fails,
-      # no tag/commit has reached the remote and no Release exists, so a re-run is
-      # safe and recomputes the SAME version (the latest tag has not moved).
-      # `--skip-duplicate` exits 0 when this exact version already exists on
-      # nuget.org (HTTP 409) — that is NuGet's own, version-scoped "already
-      # published == success" signal, so a re-run after a post-publish failure
-      # sails through instead of erroring. The loop retries only transient failures
-      # (network, registry blips).
+      # no tag/commit has reached the remote and no Release exists. A retry is safe
+      # only while the verifier proves that the version is absent or that the
+      # existing package has identical canonical contents and release commit.
       #
       # MORE SECURE ALTERNATIVE — NuGet Trusted Publishing (OIDC): instead of a
       # long-lived NUGET_API_KEY secret, mint a short-lived key per run. Add
@@ -372,6 +423,8 @@ jobs:
       # the `NuGet/login` action to obtain a temporary key (and update the preflight
       # step accordingly). See https://learn.microsoft.com/nuget/nuget-org/trusted-publishing
       - name: Push to NuGet.org (irreversible pivot)
+        id: nuget_publish
+        if: ${{ steps.package-identity.outputs.existing != 'true' }}
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
@@ -387,17 +440,48 @@ jobs:
             echo "::warning::NuGet push attempt $attempt failed; retrying after backoff..."
             sleep $((attempt * 15))
           done
-          echo "::error::NuGet push failed after 3 attempts. Nothing was pushed to the remote and no Release was created — it is safe to re-run this workflow."
+          echo "::error::NuGet push failed after 3 attempts. Acceptance is ambiguous; do not rebuild or re-run this release."
+          echo "::error::Use the exact release-recovery-v${{ steps.version.outputs.version }} artifact if a later step must be completed."
           exit 1
+
+      # This second check closes the race between the preflight lookup and the
+      # publish. It also makes --skip-duplicate safe: a duplicate is accepted
+      # only when the downloaded package still matches this release commit and
+      # the canonical contents packed by this run. A mismatch fails before VCS/GitHub work.
+      - name: Verify published NuGet package identity
+        env:
+          PACKAGE_ID: __ProjectName__
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.release-identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+          package=$(find ./artifacts -maxdepth 1 -type f -name '*.nupkg' -print -quit)
+          python3 scripts/verify-nuget-package.py \
+            --package "$package" \
+            --package-id "$PACKAGE_ID" \
+            --version "$VERSION" \
+            --expected-commit "$RELEASE_COMMIT"
 
       # Reversible VCS write, AFTER the pivot. --atomic guarantees the branch and
       # tag move together (or neither does), so we never advance main while losing
-      # the tag. If this is rejected (e.g. branch protection — see the checkout
-      # note), the package is already on nuget.org; re-running recomputes the SAME
-      # version (the tag is not yet on the remote) and --skip-duplicate makes the
-      # republish a no-op, so the re-run completes the release.
+      # the tag. If this fails, the package and canonical release identity are already
+      # immutable; recover from the uploaded run artifact instead of rebuilding.
       - name: Push the release commit + tag (atomic)
-        run: git push --atomic origin HEAD:refs/heads/main "${{ steps.version.outputs.tag }}"
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if git push --atomic origin HEAD:refs/heads/main "$TAG"; then
+              echo "Release commit and tag push succeeded (attempt $attempt)."
+              exit 0
+            fi
+            echo "::warning::Atomic release push attempt $attempt failed; retrying after backoff..."
+            sleep $((attempt * 10))
+          done
+          echo "::error::The package is already published, but the release commit and tag were not pushed."
+          echo "::error::Do not rebuild or re-run the whole workflow; use release-recovery-$TAG."
+          exit 1
 
       # Final, recreatable step, made idempotent (edit the Release if it already
       # exists, else create it) and retried. By now the package is published AND the
@@ -432,5 +516,26 @@ jobs:
             echo "::warning::GitHub Release step attempt $attempt failed; retrying after backoff..."
             sleep $((attempt * 10))
           done
-          echo "::error::Failed to create/update the GitHub Release after 3 attempts. The package is ALREADY on nuget.org and the tag is ALREADY on main. Do NOT re-run this workflow (a re-run computes the NEXT version and orphans this release). Finish by hand: if the Release does not exist yet, 'gh release create $TAG --title $TAG --notes-file release-notes.md ./artifacts/*.nupkg ./artifacts/*.snupkg ./artifacts/SHA256SUMS'; if it already exists (likely, since a partial attempt may have created it), 'gh release edit $TAG --notes-file release-notes.md && gh release upload $TAG ./artifacts/*.nupkg ./artifacts/*.snupkg ./artifacts/SHA256SUMS --clobber'."
+          echo "::error::Failed to create/update the GitHub Release after 3 attempts. The package and tag are already published. Do NOT re-run this workflow; use release-recovery-$TAG to finish by hand."
           exit 1
+
+      # Preserve the exact post-pivot state whenever a later step fails or is
+      # cancelled. A new run must never rebuild an already-published version from
+      # a moved main branch.
+      - name: Preserve exact post-pivot recovery state
+        if: >-
+          ${{
+            always() && (failure() || cancelled()) &&
+            steps.package-identity.outcome == 'success'
+          }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-recovery-${{ steps.version.outputs.tag }}
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+            artifacts/SHA256SUMS
+            artifacts/release-recovery.bundle
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 30
