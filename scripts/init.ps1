@@ -85,9 +85,6 @@ foreach ($entry in $metadata.GetEnumerator()) {
     if ($entry.Value -match '[\x00-\x1F\x7F\u2028\u2029]') {
         throw "Invalid -$($entry.Key): metadata values must not contain control characters or line separators."
     }
-    if ($entry.Value -match $tokenPattern) {
-        throw "Invalid -$($entry.Key): metadata values must not contain template tokens."
-    }
 }
 if ($GitHubOwner -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$') {
     throw "Invalid -GitHubOwner '$GitHubOwner'. Use letters, digits, and internal hyphens only."
@@ -152,7 +149,7 @@ function ConvertTo-JsonStringContent([string]$value) {
 
 # Values written into XML files (e.g. the .fsproj <Authors>/<Description>) must be
 # XML-escaped. The other maps protect string literals in generated JSON, shell, and
-# Python/YAML workflow contexts; raw text is only used after control/token validation.
+# Python/YAML workflow contexts; raw text is only used after control-character validation.
 $xmlReplacements = [ordered]@{}
 foreach ($key in $replacements.Keys) {
     $xmlReplacements[$key] = ConvertTo-XmlContent $replacements[$key]

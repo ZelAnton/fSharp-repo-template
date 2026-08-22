@@ -167,6 +167,22 @@ function Assert-PsGitUnavailable([string]$name) {
     }
 }
 
+function Assert-PsLiteralTokens([string]$name) {
+    $caseRoot = Join-Path $tempRoot "literal-tokens-$name"
+    Copy-Template $caseRoot
+    $author = 'literal __AuthorEmail__'
+    $description = 'description __Year__'
+
+    & (Join-Path $caseRoot 'scripts/init.ps1') -ProjectName 'Acme.Widgets' -Author $author `
+        -AuthorEmail 'dev@example.com' -Description $description -KeepScript | Out-Null
+
+    $project = [xml](Get-Content -LiteralPath (Join-Path $caseRoot 'src/Acme.Widgets/Acme.Widgets.fsproj') -Raw)
+    Assert-True ($project.Project.PropertyGroup.Authors -ceq $author) "PowerShell changed a later template token inside -Author for $name"
+    Assert-True ($project.Project.PropertyGroup.Description -ceq $description) "PowerShell changed a later template token inside -Description for $name"
+    $workflow = Get-Content -LiteralPath (Join-Path $caseRoot '.github/workflows/release.yml') -Raw
+    Assert-True ($workflow -match [regex]::Escape('git config user.name "literal __AuthorEmail__"')) "PowerShell cascaded a later token in workflow output for $name"
+}
+
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('fsharp-template-init-hidden-' + [Guid]::NewGuid().ToString('N'))
 $projectToken = '__' + 'ProjectName__'
@@ -199,6 +215,7 @@ try {
     Assert-PsRollback 'rollback-during-cleanup' 'cleanup'
     Assert-PsScope 'known-text-scope'
     Assert-PsGitUnavailable 'defaults-and-explicit-values'
+    Assert-PsLiteralTokens 'metadata-values'
 
     foreach ($entry in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
         if ($entry.Name -ne '.git') {

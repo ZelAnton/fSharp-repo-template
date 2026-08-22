@@ -193,10 +193,6 @@ validate_metadata() {
   if metadata_value_has_control_character "$value"; then
     die "invalid $option: metadata values must not contain control characters or line separators."
   fi
-  case "$value" in
-    *__ProjectName__*|*__Author__*|*__AuthorEmail__*|*__GitHubOwner__*|*__Description__*|*__Year__*)
-      die "invalid $option: metadata values must not contain template tokens." ;;
-  esac
 }
 
 validate_metadata '--author' "$author"

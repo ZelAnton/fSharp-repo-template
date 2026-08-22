@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First releases now apply the selected major, minor, or patch bump to the project version seed.
 
 ### Fixed
+- Initializers now preserve template-token text supplied inside project metadata values.
 - PowerShell initialization now applies author and email fallbacks when Git is unavailable while preserving explicit metadata.
 - CI and releases now fail when NUnit discovers or executes zero tests, and require TRX results.
 - Initializers now reject dangling local `.claude/settings.json` links and Bash activation no longer overwrites a destination created after preflight.
