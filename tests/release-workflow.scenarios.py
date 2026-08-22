@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import http.server
 import pathlib
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -107,6 +109,55 @@ def verify(
 
 
 class ReleaseWorkflowScenarios(unittest.TestCase):
+    def test_release_tag_selection_is_strict_and_reachable(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        selection_start = workflow.index('          LATEST_TAG=""')
+        selection_end = workflow.index('          if [[ -n "$LATEST_TAG" ]]', selection_start)
+        selection = workflow[selection_start:selection_end]
+        selection = "set -euo pipefail\n" + re.sub(r"^ {10}", "", selection, flags=re.MULTILINE)
+        selection += 'printf \'%s\\n\' "$LATEST_TAG"\n'
+
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash, "bash is required to execute the release workflow selector")
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = pathlib.Path(directory)
+            run(["git", "init", "-q"], repository)
+            run(["git", "config", "user.email", "test@example.invalid"], repository)
+            run(["git", "config", "user.name", "Release Test"], repository)
+
+            (repository / "source.txt").write_text("root\n")
+            run(["git", "add", "source.txt"], repository)
+            run(["git", "commit", "-qm", "root"], repository)
+            root_commit = run(["git", "rev-parse", "HEAD"], repository).stdout.strip()
+            run(["git", "tag", "v1.9.9", root_commit], repository)
+
+            (repository / "source.txt").write_text("main\n")
+            run(["git", "commit", "-qam", "main"], repository)
+            main_commit = run(["git", "rev-parse", "HEAD"], repository).stdout.strip()
+            run(["git", "tag", "v1.10.0", main_commit], repository)
+            run(["git", "tag", "v100.0.0-rc.1", main_commit], repository)
+            run(["git", "tag", "v01.20.30", main_commit], repository)
+            run(["git", "tag", "v1.10.0.1", main_commit], repository)
+
+            run(["git", "checkout", "-qb", "unreleased", root_commit], repository)
+            (repository / "source.txt").write_text("unreleased\n")
+            run(["git", "commit", "-qam", "unreleased"], repository)
+            unreachable_commit = run(["git", "rev-parse", "HEAD"], repository).stdout.strip()
+            run(["git", "tag", "v999.0.0", unreachable_commit], repository)
+            run(["git", "checkout", "-q", "-B", "main", main_commit], repository)
+
+            result = subprocess.run(
+                [bash],
+                cwd=repository,
+                check=False,
+                input=selection.encode(),
+                capture_output=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(result.stdout.decode().strip(), "v1.10.0")
+
     def test_package_identity_and_retry_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
