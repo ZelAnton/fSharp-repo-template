@@ -145,6 +145,66 @@ run_settings_conflict_case() {
   }
 }
 
+run_settings_symlink_case() {
+  local name="$1"
+  local checkout="$test_root/$name"
+  mkdir -p "$checkout"
+  (cd "$repo_root" && tar --exclude='./.git' --exclude='*/bin' --exclude='*/obj' -cf - .) | (cd "$checkout" && tar -xf -)
+  local settings="$checkout/.claude/settings.json"
+  ln -s "$checkout/.claude/missing-settings-target" "$settings"
+  local output status
+  set +e
+  output="$(cd "$checkout" && bash scripts/init.sh --project-name Acme.Widgets --keep-script 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || { printf 'expected dangling settings link failure for %s\n%s\n' "$name" "$output" >&2; return 1; }
+  printf '%s\n' "$output" | grep -F -- "refusing to overwrite existing local '.claude/settings.json'" >/dev/null || {
+    printf 'missing dangling-link diagnostic for %s: %s\n' "$name" "$output" >&2
+    return 1
+  }
+  [ -L "$settings" ] || { printf 'dangling settings link was removed for %s\n' "$name" >&2; return 1; }
+  [ -f "$checkout/.claude/settings.json.template" ] || { printf 'settings template was removed for %s\n' "$name" >&2; return 1; }
+}
+
+run_settings_race_case() {
+  local name="$1"
+  local checkout="$test_root/$name"
+  local fake_bin="$test_root/$name-fake-bin"
+  mkdir -p "$checkout" "$fake_bin"
+  (cd "$repo_root" && tar --exclude='./.git' --exclude='*/bin' --exclude='*/obj' -cf - .) | (cd "$checkout" && tar -xf -)
+  local fake_ln="$fake_bin/ln"
+  cat > "$fake_ln" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$#" -eq 4 ] && [ "$1" = '-T' ] && [ "$2" = '--' ]; then
+  printf '%s' '{"permissions":{"allow":["Bash(race-created)"]}}' > "$4"
+fi
+exec "$REAL_LN" "$@"
+EOF
+  chmod +x "$fake_ln"
+  local before output status real_ln
+  before="$(snapshot "$checkout")"
+  real_ln="$(command -v ln)"
+  set +e
+  output="$(cd "$checkout" && REAL_LN="$real_ln" PATH="$fake_bin:$PATH" bash scripts/init.sh --project-name Acme.Widgets --keep-script 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || { printf 'expected no-clobber failure for %s\n%s\n' "$name" "$output" >&2; return 1; }
+  printf '%s\n' "$output" | grep -F -- "refusing to overwrite existing local '.claude/settings.json'" >/dev/null || {
+    printf 'missing no-clobber diagnostic for %s: %s\n' "$name" "$output" >&2
+    return 1
+  }
+  [ "$before" = "$(snapshot "$checkout")" ] || {
+    printf 'initializer mutated the checkout for %s\n' "$name" >&2
+    return 1
+  }
+  [ -f "$checkout/.claude/settings.json.template" ] || { printf 'settings template was removed for %s\n' "$name" >&2; return 1; }
+  [ ! -e "$checkout/.claude/settings.json" ] && [ ! -L "$checkout/.claude/settings.json" ] || {
+    printf 'race-created settings entry survived rollback for %s\n' "$name" >&2
+    return 1
+  }
+}
+
 run_rollback_case() {
   local name="$1" boundary="$2"
   local checkout="$test_root/$name"
@@ -290,6 +350,8 @@ run_failure_case 'year-below-lower-boundary' "invalid --year '-2147483649'" \
   --project-name Acme.Widgets --year -2147483649 --keep-script
 run_collision_case 'generated-name-collision'
 run_settings_conflict_case 'settings-conflict'
+run_settings_symlink_case 'dangling-settings-link'
+run_settings_race_case 'settings-race'
 run_rollback_case 'rollback-after-rename' 'apply-path-rename'
 run_rollback_case 'rollback-after-settings' 'apply-settings-activation'
 run_rollback_case 'rollback-during-cleanup' 'cleanup'

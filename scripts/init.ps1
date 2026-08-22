@@ -212,6 +212,17 @@ function Assert-WritablePath([string]$path, [string]$operation) {
     if (Test-Path -LiteralPath $path -PathType Container) { Assert-DirectoryWritable $path $operation }
 }
 
+function Test-PathEntry([string]$path) {
+    if (Test-Path -LiteralPath $path) { return $true }
+    $parent = Split-Path -Path $path -Parent
+    $name = Split-Path -Path $path -Leaf
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) { return $false }
+    $entry = Get-ChildItem -LiteralPath $parent -Force -ErrorAction Stop |
+        Where-Object { $_.Name -ceq $name } |
+        Select-Object -First 1
+    return $null -ne $entry
+}
+
 function Copy-MutableTree([string]$sourceRoot, [string]$destinationRoot) {
     New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
     foreach ($item in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
@@ -350,7 +361,7 @@ $claudeSettings = Join-Path $repoRoot '.claude/settings.json'
 $templateOnly = @('TEMPLATE.md', 'docs/AGENT-INIT-GUIDE.md')
 $docsDir = Join-Path $repoRoot 'docs'
 if (Test-Path -LiteralPath $claudeTemplate) {
-    if (Test-Path -LiteralPath $claudeSettings) {
+    if (Test-PathEntry $claudeSettings) {
         throw "Cannot initialize: refusing to overwrite existing local '.claude/settings.json'; remove it or the template before retrying."
     }
     Assert-WritablePath $claudeTemplate 'activate settings'

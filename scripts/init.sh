@@ -583,7 +583,12 @@ inject_failure apply-settings-activation
 # 3) Activate the Claude Code shared settings. Shipped inert as a .template file
 #    so the template repository itself does not auto-grant any permissions.
 if [ -f "$repo_root/.claude/settings.json.template" ]; then
-  mv -f "$repo_root/.claude/settings.json.template" "$repo_root/.claude/settings.json"
+  # link(2) creates the destination directory entry atomically and refuses an
+  # entry that appeared after preflight; remove the source only after that succeeds.
+  if ! ln -T -- "$repo_root/.claude/settings.json.template" "$repo_root/.claude/settings.json"; then
+    die "refusing to overwrite existing local '.claude/settings.json'; remove it or the template before retrying."
+  fi
+  rm -- "$repo_root/.claude/settings.json.template" || die "could not activate '.claude/settings.json'."
   echo "    Activated .claude/settings.json"
 fi
 inject_failure apply-template-removal

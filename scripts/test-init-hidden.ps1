@@ -77,6 +77,30 @@ function Assert-PsSettingsConflict([string]$name) {
     Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
 }
 
+function Assert-PsDanglingSettingsLink([string]$name) {
+    $caseRoot = Join-Path $tempRoot "failure-$name"
+    Copy-Template $caseRoot
+    $settingsPath = Join-Path $caseRoot '.claude/settings.json'
+    $missingTarget = Join-Path $caseRoot '.claude/missing-settings-target'
+    try {
+        New-Item -ItemType SymbolicLink -Path $settingsPath -Target $missingTarget -ErrorAction Stop | Out-Null
+    }
+    catch {
+        Write-Host "Skipped ${name}: this host cannot create symbolic links ($($_.Exception.Message))." -ForegroundColor Yellow
+        return
+    }
+    $templatePath = Join-Path $caseRoot '.claude/settings.json.template'
+    $templateBefore = [IO.File]::ReadAllText($templatePath)
+    $output = & pwsh -NoProfile -File (Join-Path $caseRoot 'scripts/init.ps1') -ProjectName Acme.Widgets -KeepScript 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0) {
+        throw "expected initializer failure for $name"
+    }
+    Assert-True (($output -replace '\s+', ' ') -match 'refusing to overwrite existing local ''\.claude/settings\.json''') "missing dangling-link diagnostic for ${name}: $output"
+    Assert-True ($null -ne (Get-ChildItem -LiteralPath (Split-Path -Path $settingsPath -Parent) -Force | Where-Object { $_.Name -ceq 'settings.json' })) "dangling settings link was removed for $name"
+    Assert-True ([IO.File]::ReadAllText($templatePath) -ceq $templateBefore) "settings template changed for $name"
+    Assert-True (-not (Test-Path -LiteralPath $missingTarget)) "dangling settings target was created for $name"
+}
+
 function Assert-PsRollback([string]$name, [string]$boundary) {
     $caseRoot = Join-Path $tempRoot "rollback-$name"
     Copy-Template $caseRoot
@@ -132,6 +156,7 @@ try {
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
     Assert-PsCollisionFailure 'generated-name-collision'
     Assert-PsSettingsConflict 'settings-conflict'
+    Assert-PsDanglingSettingsLink 'dangling-settings-link'
     Assert-PsRollback 'rollback-after-rename' 'apply-path-rename'
     $rollbackRenameRoot = Join-Path $tempRoot 'rollback-rollback-after-rename'
     Assert-True (Test-Path -LiteralPath (Join-Path $rollbackRenameRoot 'src/__ProjectName__')) 'rollback lost the original token-named directory.'
