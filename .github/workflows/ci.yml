@@ -25,13 +25,22 @@ jobs:
           python-version: '3.x'
 
       - name: Install yamllint
-        run: pip install yamllint
+        run: >-
+          python -m pip install --disable-pip-version-check
+          --requirement tests/ci-tooling/requirements.in
+          --constraint tests/ci-tooling/constraints.txt
+
+      - name: Verify yamllint version
+        run: test "$(python -m yamllint --version)" = "yamllint 1.38.0"
+
+      - name: Check yamllint dependency contract
+        run: python tests/ci-tooling/test_yamllint_contract.py
 
       # Config is .yamllint.yml — tuned for Actions YAML. Real defects (tabs,
       # duplicate keys, bad indentation) fail; cosmetic line-length stays a
       # non-failing warning.
       - name: Lint YAML
-        run: yamllint .
+        run: python -m yamllint .
 
       - name: Check release workflow invariants
         shell: pwsh

@@ -1,0 +1,2 @@
+# Direct CI tooling input. Runtime dependencies are pinned in constraints.txt.
+yamllint==1.38.0
