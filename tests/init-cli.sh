@@ -305,6 +305,43 @@ run_scope_case() {
   }
 }
 
+run_literal_token_case() {
+  local name="$1"
+  local checkout="$test_root/$name"
+  local author='literal __AuthorEmail__'
+  local description='description __Year__'
+  mkdir -p "$checkout"
+  (
+    cd "$repo_root"
+    tar --exclude='./.git' --exclude='*/bin' --exclude='*/obj' -cf - .
+  ) | (
+    cd "$checkout"
+    tar -xf -
+  )
+
+  (cd "$checkout" && bash scripts/init.sh \
+    --project-name Acme.Widgets \
+    --author "$author" \
+    --author-email 'dev@example.com' \
+    --description "$description" \
+    --keep-script >/dev/null)
+
+  python3 - "$checkout" "$author" "$description" <<'PY'
+import pathlib
+import sys
+import xml.etree.ElementTree as ET
+
+root = pathlib.Path(sys.argv[1])
+author = sys.argv[2]
+description = sys.argv[3]
+project = ET.parse(root / "src/Acme.Widgets/Acme.Widgets.fsproj")
+assert project.findtext("PropertyGroup/Authors") == author
+assert project.findtext("PropertyGroup/Description") == description
+workflow = (root / ".github/workflows/release.yml").read_text()
+assert 'git config user.name "literal __AuthorEmail__"' in workflow
+PY
+}
+
 value_options=(--project-name --author --author-email --github-owner --description --year)
 for option in "${value_options[@]}"; do
   if [ "$option" = '--project-name' ]; then
@@ -335,8 +372,6 @@ run_failure_case 'control-author-tab' 'metadata values must not contain control 
 control_author_carriage_return=$'bad\rname'
 run_failure_case 'control-author-carriage-return' 'metadata values must not contain control characters' \
   --project-name Acme.Widgets --author "$control_author_carriage_return"
-run_failure_case 'token-description' 'metadata values must not contain template tokens' \
-  --project-name Acme.Widgets --description 'prefix__Author__suffix'
 run_failure_case 'unsafe-owner' 'invalid --github-owner' \
   --project-name Acme.Widgets --github-owner 'acme;touch-pwned'
 
@@ -356,6 +391,7 @@ run_rollback_case 'rollback-after-rename' 'apply-path-rename'
 run_rollback_case 'rollback-after-settings' 'apply-settings-activation'
 run_rollback_case 'rollback-during-cleanup' 'cleanup'
 run_context_case 'encoded-metadata'
+run_literal_token_case 'literal-template-tokens'
 run_scope_case 'known-text-scope'
 
 printf 'Bash initializer CLI regression checks passed.\n'
