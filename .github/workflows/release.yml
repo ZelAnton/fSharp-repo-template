@@ -103,6 +103,58 @@ jobs:
           # fall back to the default token.
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
 
+      - name: Preflight — reject unresolved template metadata
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import pathlib
+          import sys
+
+          markers = (
+              "__ProjectName__",
+              "__GitHubOwner__",
+              "__Author__",
+              "__AuthorEmail__",
+              "__Description__",
+              "your-org",
+              "Your Name",
+              "TODO: project description",
+          )
+          required_files = (
+              pathlib.Path("README.md"),
+              pathlib.Path("CHANGELOG.md"),
+              pathlib.Path("LICENSE"),
+              pathlib.Path(".github/CODEOWNERS"),
+              pathlib.Path(".github/workflows/release.yml"),
+              pathlib.Path("Directory.Build.props"),
+              pathlib.Path("Directory.Packages.props"),
+          )
+          project_files = sorted(pathlib.Path(".").rglob("*.fsproj"))
+          solution_files = sorted(pathlib.Path(".").glob("*.slnx"))
+          files = list(required_files) + project_files + solution_files
+          missing = [str(path) for path in required_files if not path.is_file()]
+          if not project_files:
+              missing.append("src/**/*.fsproj")
+          if not solution_files:
+              missing.append("*.slnx")
+
+          findings = [f"missing release-critical file: {path}" for path in missing]
+          for path in files:
+              if not path.is_file():
+                  continue
+              text = path.read_text(encoding="utf-8")
+              for line_number, line in enumerate(text.splitlines(), start=1):
+                  for marker in markers:
+                      if marker in line:
+                          findings.append(f"{path}:{line_number}: unresolved metadata marker {marker!r}")
+
+          if findings:
+              print("::error::Release metadata preflight failed:")
+              print("\n".join(f"- {finding}" for finding in findings))
+              sys.exit(1)
+          print(f"Release metadata preflight passed ({len(files)} files checked).")
+          PY
+
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.x'

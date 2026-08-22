@@ -110,6 +110,74 @@ def verify(
 
 
 class ReleaseWorkflowScenarios(unittest.TestCase):
+    def test_metadata_preflight_rejects_all_template_defaults_before_build(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        checkout = workflow.index("      - uses: actions/checkout")
+        preflight_start = workflow.index("      - name: Preflight ", checkout)
+        setup_dotnet = workflow.index("      - uses: actions/setup-dotnet", preflight_start)
+        build = workflow.index("      - name: Build")
+        pack = workflow.index("      - name: Pack")
+        publish = workflow.index("      - name: Push to NuGet.org (irreversible pivot)")
+        preflight = workflow[preflight_start:setup_dotnet]
+        self.assertLess(preflight_start, setup_dotnet)
+        self.assertLess(setup_dotnet, build)
+        self.assertLess(build, pack)
+        self.assertLess(pack, publish)
+        markers = (
+            "__ProjectName__",
+            "__GitHubOwner__",
+            "__Author__",
+            "__AuthorEmail__",
+            "__Description__",
+            "your-org",
+            "Your Name",
+            "TODO: project description",
+        )
+        for marker in markers:
+            self.assertIn(marker, preflight)
+
+        run_start = preflight.index("        run: |\n") + len("        run: |\n")
+        script = []
+        for line in preflight[run_start:].splitlines():
+            if line.strip() == "":
+                script.append("")
+            elif not line.startswith("          "):
+                break
+            else:
+                script.append(line[10:])
+        script = "\n".join(script).replace("\r", "") + "\n"
+        python_start = script.index("python3 <<'PY'\n") + len("python3 <<'PY'\n")
+        python_script = script[python_start : script.index("\nPY\n", python_start)]
+
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = pathlib.Path(directory)
+            for relative in (
+                "README.md",
+                "CHANGELOG.md",
+                "LICENSE",
+                ".github/CODEOWNERS",
+                ".github/workflows/release.yml",
+                "Directory.Build.props",
+                "Directory.Packages.props",
+                "Acme.slnx",
+                "src/Acme/Acme.fsproj",
+            ):
+                path = fixture / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("Acme\n", encoding="utf-8")
+            passed = subprocess.run(
+                [sys.executable], cwd=fixture, input=python_script, text=True, capture_output=True, check=False
+            )
+            self.assertEqual(passed.returncode, 0, passed.stderr)
+
+            contaminated = fixture / "README.md"
+            contaminated.write_text("description: TODO: project description\n", encoding="utf-8")
+            failed = subprocess.run(
+                [sys.executable], cwd=fixture, input=python_script, text=True, capture_output=True, check=False
+            )
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("TODO: project description", failed.stdout)
+
     def test_first_release_uses_full_history_without_synthetic_tag(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
 
