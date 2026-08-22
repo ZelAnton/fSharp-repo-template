@@ -374,7 +374,7 @@ jobs:
         run: dotnet test --no-build --configuration Release
 
       - name: Pack
-        run: dotnet pack src/__ProjectName__/__ProjectName__.fsproj --no-build --configuration Release --output ./artifacts /p:Version=${{ steps.version.outputs.version }}
+        run: dotnet pack src/__ProjectName__/__ProjectName__.fsproj --no-build --configuration Release --output ./artifacts /p:Version=${{ steps.version.outputs.version }} /p:PackageReleaseNotesFile=release-notes.md
 
       - name: Generate SHA256SUMS
         run: |
