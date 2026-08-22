@@ -51,10 +51,12 @@ jobs:
       # this workflow file would run — against main, which the checkout below
       # hard-pins — producing a confusing mismatch. Fail fast before any work.
       - name: Guard — release only from main
+        env:
+          RELEASE_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
-            echo "::error::Release must be dispatched from main (got: ${{ github.ref }}). Re-run with 'Use workflow from: main'."
+          if [[ "$RELEASE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Release must be dispatched from main (got: $RELEASE_REF). Re-run with 'Use workflow from: main'."
             exit 1
           fi
           echo "Dispatched from main."
