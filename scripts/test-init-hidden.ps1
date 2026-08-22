@@ -60,6 +60,23 @@ function Assert-PsCollisionFailure([string]$name) {
     Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
 }
 
+function Assert-PsSettingsConflict([string]$name) {
+    $caseRoot = Join-Path $tempRoot "failure-$name"
+    Copy-Template $caseRoot
+    $settingsPath = Join-Path $caseRoot '.claude/settings.json'
+    $expected = '{"permissions":{"allow":["Bash(custom)"]}}'
+    [IO.File]::WriteAllText($settingsPath, $expected, [Text.UTF8Encoding]::new($false))
+    $before = Get-Snapshot $caseRoot
+    $output = & pwsh -NoProfile -File (Join-Path $caseRoot 'scripts/init.ps1') -ProjectName Acme.Widgets -KeepScript 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0) {
+        throw "expected initializer failure for $name"
+    }
+    Assert-True (($output -replace '\s+', ' ') -match 'refusing to overwrite existing local ''\.claude/settings\.json''') "missing settings conflict diagnostic for ${name}: $output"
+    Assert-True ([IO.File]::ReadAllText($settingsPath) -ceq $expected) "local settings changed for $name"
+    Assert-True (Test-Path -LiteralPath (Join-Path $caseRoot '.claude/settings.json.template')) "settings template was removed for $name"
+    Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
+}
+
 function Assert-PsRollback([string]$name, [string]$boundary) {
     $caseRoot = Join-Path $tempRoot "rollback-$name"
     Copy-Template $caseRoot
@@ -114,6 +131,7 @@ try {
     Assert-PsFailure 'unsafe-owner' 'Invalid -GitHubOwner' @(
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
     Assert-PsCollisionFailure 'generated-name-collision'
+    Assert-PsSettingsConflict 'settings-conflict'
     Assert-PsRollback 'rollback-after-rename' 'apply-path-rename'
     $rollbackRenameRoot = Join-Path $tempRoot 'rollback-rollback-after-rename'
     Assert-True (Test-Path -LiteralPath (Join-Path $rollbackRenameRoot 'src/__ProjectName__')) 'rollback lost the original token-named directory.'

@@ -118,6 +118,33 @@ run_collision_case() {
   }
 }
 
+run_settings_conflict_case() {
+  local name="$1"
+  local checkout="$test_root/$name"
+  mkdir -p "$checkout"
+  (cd "$repo_root" && tar --exclude='./.git' --exclude='*/bin' --exclude='*/obj' -cf - .) | (cd "$checkout" && tar -xf -)
+  local settings="$checkout/.claude/settings.json"
+  local expected='{"permissions":{"allow":["Bash(custom)"]}}'
+  printf '%s' "$expected" > "$settings"
+  local before output status
+  before="$(snapshot "$checkout")"
+  set +e
+  output="$(cd "$checkout" && bash scripts/init.sh --project-name Acme.Widgets --keep-script 2>&1)"
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || { printf 'expected settings conflict failure for %s\n%s\n' "$name" "$output" >&2; return 1; }
+  printf '%s\n' "$output" | grep -F -- "refusing to overwrite existing local '.claude/settings.json'" >/dev/null || {
+    printf 'missing settings conflict diagnostic for %s: %s\n' "$name" "$output" >&2
+    return 1
+  }
+  [ "$(cat "$settings")" = "$expected" ] || { printf 'local settings changed for %s\n' "$name" >&2; return 1; }
+  [ -f "$checkout/.claude/settings.json.template" ] || { printf 'settings template was removed for %s\n' "$name" >&2; return 1; }
+  [ "$before" = "$(snapshot "$checkout")" ] || {
+    printf 'initializer mutated the checkout for %s\n' "$name" >&2
+    return 1
+  }
+}
+
 run_rollback_case() {
   local name="$1" boundary="$2"
   local checkout="$test_root/$name"
@@ -262,6 +289,7 @@ run_failure_case 'year-above-upper-boundary' "invalid --year '2147483648'" \
 run_failure_case 'year-below-lower-boundary' "invalid --year '-2147483649'" \
   --project-name Acme.Widgets --year -2147483649 --keep-script
 run_collision_case 'generated-name-collision'
+run_settings_conflict_case 'settings-conflict'
 run_rollback_case 'rollback-after-rename' 'apply-path-rename'
 run_rollback_case 'rollback-after-settings' 'apply-settings-activation'
 run_rollback_case 'rollback-during-cleanup' 'cleanup'

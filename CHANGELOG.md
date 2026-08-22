@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First releases now apply the selected major, minor, or patch bump to the project version seed.
 
 ### Fixed
+- Initializers now refuse to overwrite an existing local `.claude/settings.json`.
 - Releases now fail preflight when project metadata still contains template tokens or default placeholders.
 - First releases now include the full relevant history and use a valid release-tag changelog link.
 - PowerShell initializer rollback now restores all mutable files after a failed path rename.

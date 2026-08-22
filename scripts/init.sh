@@ -512,6 +512,9 @@ for ((i = 0; i < ${#rename_sources[@]}; i++)); do
   assert_writable "${rename_destinations[i]}" rename
 done
 if [ -e "$claude_template" ]; then
+  if [ -e "$claude_settings" ] || [ -L "$claude_settings" ]; then
+    die "refusing to overwrite existing local '.claude/settings.json'; remove it or the template before retrying."
+  fi
   assert_writable "$claude_template" "activate settings"
   assert_writable "$claude_settings" "activate settings"
 fi

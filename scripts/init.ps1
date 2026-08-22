@@ -350,6 +350,9 @@ $claudeSettings = Join-Path $repoRoot '.claude/settings.json'
 $templateOnly = @('TEMPLATE.md', 'docs/AGENT-INIT-GUIDE.md')
 $docsDir = Join-Path $repoRoot 'docs'
 if (Test-Path -LiteralPath $claudeTemplate) {
+    if (Test-Path -LiteralPath $claudeSettings) {
+        throw "Cannot initialize: refusing to overwrite existing local '.claude/settings.json'; remove it or the template before retrying."
+    }
     Assert-WritablePath $claudeTemplate 'activate settings'
     Assert-WritablePath $claudeSettings 'activate settings'
 }
