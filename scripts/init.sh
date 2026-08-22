@@ -137,7 +137,8 @@ done
 
 # Project / namespace / assembly / NuGet id: letters, digits, underscores;
 # dot-separated segments allowed (e.g. Acme.Widgets). Mirrors init.ps1's regex
-# ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$.
+# ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$. The generated path names
+# must also be portable across Windows and POSIX filesystems.
 # Reject a leading/trailing dot up front: `IFS='.' read` silently drops a
 # trailing empty field, so `Acme.` would otherwise slip past the segment loop.
 case "$project_name" in
@@ -152,6 +153,19 @@ for seg in "${_segs[@]}"; do
   case "$seg" in
     *[!A-Za-z0-9_]*) die "invalid --project-name '$project_name'. Use letters, digits, underscores; dot-separated segments allowed (e.g. Acme.Widgets)." ;;
   esac
+done
+
+windows_base_name="${project_name%%.*}"
+case "$windows_base_name" in
+  [Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][123456789]|[Ll][Pp][Tt][123456789])
+    die "invalid --project-name '$project_name': Windows reserves the base name '$windows_base_name' (case-insensitive), including when followed by an extension. No files were changed." ;;
+esac
+
+for suffix in '' '.slnx' '.sln.DotSettings' '.Tests' '.Tests.fsproj'; do
+  generated_name="${project_name}${suffix}"
+  if [ "${#generated_name}" -gt 255 ]; then
+    die "invalid --project-name '$project_name': generated path component '$generated_name' exceeds the portable path component limit of 255 bytes. No files were changed."
+  fi
 done
 
 # Defaults (mirror init.ps1).
