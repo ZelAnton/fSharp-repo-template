@@ -184,12 +184,21 @@ jobs:
             esac
             echo "Latest release tag: $LATEST_TAG (current=$CURRENT); ${{ inputs.bump }} bump -> $NEW"
           else
-            # First release: take the seed version straight from the .fsproj <Version>
-            # so the published version matches what the repo declares, instead of an
-            # implicit 0.0.1 from applying the bump input. The bump input is ignored.
+            # First release: the .fsproj <Version> is the seed/current version, so
+            # apply the selected bump to it using the same rules as tagged releases.
             CURRENT=""
-            NEW=$(grep -oP '(?<=<Version>)[^<]+' src/__ProjectName__/__ProjectName__.fsproj | head -n1)
-            echo "No release tags found; seeding first release from .fsproj <Version>=$NEW (bump input ignored)."
+            SEED=$(grep -oP '(?<=<Version>)[^<]+' src/__ProjectName__/__ProjectName__.fsproj | head -n1)
+            if [[ ! "$SEED" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Could not parse first-release seed version from .fsproj (got: '$SEED')"
+              exit 1
+            fi
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$SEED"
+            case "${{ inputs.bump }}" in
+              major) NEW="$((MAJOR+1)).0.0" ;;
+              minor) NEW="${MAJOR}.$((MINOR+1)).0" ;;
+              patch) NEW="${MAJOR}.${MINOR}.$((PATCH+1))" ;;
+            esac
+            echo "No release tags found; seed=$SEED; ${{ inputs.bump }} bump -> $NEW"
           fi
           if [[ ! "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Computed version '$NEW' is not a valid MAJOR.MINOR.PATCH semver."

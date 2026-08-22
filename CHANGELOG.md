@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Initializer transformations now stage and roll back checkout changes when an intermediate operation fails.
+- First releases now apply the selected major, minor, or patch bump to the project version seed.
 
 ### Fixed
 - Releases now fail preflight when project metadata still contains template tokens or default placeholders.

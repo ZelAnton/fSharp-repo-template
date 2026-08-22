@@ -194,6 +194,53 @@ class ReleaseWorkflowScenarios(unittest.TestCase):
         self.assertIn('command.append(f"{prev_tag}..HEAD")', auto_fill)
         self.assertIn('generating from the full git history for the first release', auto_fill)
 
+    def test_first_release_applies_selected_bump_to_project_seed(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        version_start = workflow.index("      - name: Determine next version")
+        version_end = workflow.index("\n      - name: Verify tag does not exist", version_start)
+        version_step = workflow[version_start:version_end]
+        run_start = version_step.index("        run: |\n") + len("        run: |\n")
+        script_lines = []
+        for line in version_step[run_start:].splitlines():
+            if not line.startswith("          "):
+                break
+            script_lines.append(line[10:])
+        script = "\n".join(script_lines).replace("${{ inputs.bump }}", "$INPUT_BUMP") + "\n"
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash, "bash is required to execute the first-release version selector")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            project = root / "src" / "__ProjectName__"
+            project.mkdir(parents=True)
+            (project / "__ProjectName__.fsproj").write_text(
+                "<Project><PropertyGroup><Version>0.1.0</Version></PropertyGroup></Project>\n",
+                encoding="utf-8",
+            )
+            run(["git", "init", "-q"], root)
+            run(["git", "config", "user.email", "test@example.invalid"], root)
+            run(["git", "config", "user.name", "Release Test"], root)
+            run(["git", "add", "."], root)
+            run(["git", "commit", "-qm", "seed"], root)
+
+            for bump, expected in (("patch", "0.1.1"), ("minor", "0.2.0"), ("major", "1.0.0")):
+                output_name = f"{bump}-output.txt"
+                output = root / output_name
+                invocation = (
+                    f"INPUT_BUMP={shlex.quote(bump)} GITHUB_OUTPUT={shlex.quote(output_name)}\n"
+                    f"{script}"
+                )
+                result = subprocess.run(
+                    [bash],
+                    cwd=root,
+                    check=False,
+                    input=invocation.encode(),
+                    capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertIn(f"version={expected}", output.read_text())
+                self.assertIn(f"{bump} bump -> {expected}", result.stdout.decode())
+
     def test_git_cliff_uses_an_exact_verified_release_pin(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         source_identity = workflow.index("      - name: Capture release source identity")
