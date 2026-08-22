@@ -137,6 +137,10 @@ try {
     $projectFile = Join-Path $tempRoot 'src/Hidden.Test/Hidden.Test.fsproj'
     Assert-True (Test-Path -LiteralPath $projectFile) 'Ordinary token-named project paths were not renamed.'
 
+    $releaseScenarios = Get-Content -LiteralPath (Join-Path $tempRoot 'tests/release-workflow.scenarios.py') -Raw
+    Assert-True ($releaseScenarios -match [regex]::Escape('"Hidden.Test"')) 'Release workflow scenarios did not receive the generated project path.'
+    Assert-True ($releaseScenarios -notmatch [regex]::Escape('"__ProjectName__"')) 'Release workflow scenarios retained a template project path.'
+
     $contextRoot = Join-Path $tempRoot 'encoded-context'
     Copy-Template $contextRoot
     $author = 'O"Reilly \Program Files\Acme\"quoted"\bin & Sons; $HOME `id`'

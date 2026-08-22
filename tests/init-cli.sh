@@ -155,6 +155,9 @@ assert (root / "metadata.json").read_text().rstrip("\n") == '{"author":"__Author
 assert (root / "metadata.yaml").read_text().rstrip("\n") == 'value: "__Author__"'
 assert (root / "metadata.py").read_text().rstrip("\n") == 'value = "__Author__"'
 assert (root / "src/Acme.Widgets/Acme.Widgets.fsproj").exists()
+release_scenarios = (root / "tests" / "release-workflow.scenarios.py").read_text()
+assert '"Acme.Widgets"' in release_scenarios
+assert '"__ProjectName__"' not in release_scenarios
 assert ET.parse(root / "src/Acme.Widgets/Acme.Widgets.fsproj").findtext("PropertyGroup/Authors") == author
 PY
   grep -F -- 'printf "%s\\n" "__Author__"' "$checkout/metadata.sh" >/dev/null || {

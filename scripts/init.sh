@@ -330,6 +330,7 @@ known_text_paths=(
   'tests/__ProjectName__.Tests/__ProjectName__.Tests.fsproj'
   'tests/ci-tooling/constraints.txt' 'tests/ci-tooling/requirements.in'
   'tests/ci-tooling/test_sdk_alignment.py' 'tests/ci-tooling/test_yamllint_contract.py'
+  'tests/release-workflow.scenarios.py'
 )
 changed=0
 for relative_path in "${known_text_paths[@]}"; do

@@ -223,7 +223,8 @@ $knownTextPaths = @(
     'tests/__ProjectName__.Tests/GreeterTests.fs',
     'tests/__ProjectName__.Tests/__ProjectName__.Tests.fsproj',
     'tests/ci-tooling/constraints.txt', 'tests/ci-tooling/requirements.in',
-    'tests/ci-tooling/test_sdk_alignment.py', 'tests/ci-tooling/test_yamllint_contract.py'
+    'tests/ci-tooling/test_sdk_alignment.py', 'tests/ci-tooling/test_yamllint_contract.py',
+    'tests/release-workflow.scenarios.py'
 )
 $files = foreach ($relativePath in $knownTextPaths) {
     $path = Join-Path $repoRoot $relativePath
