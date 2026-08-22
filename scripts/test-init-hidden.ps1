@@ -115,6 +115,9 @@ try {
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
     Assert-PsCollisionFailure 'generated-name-collision'
     Assert-PsRollback 'rollback-after-rename' 'apply-path-rename'
+    $rollbackRenameRoot = Join-Path $tempRoot 'rollback-rollback-after-rename'
+    Assert-True (Test-Path -LiteralPath (Join-Path $rollbackRenameRoot 'src/__ProjectName__')) 'rollback lost the original token-named directory.'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $rollbackRenameRoot 'src/Acme.Widgets'))) 'rollback retained the renamed directory.'
     Assert-PsRollback 'rollback-after-settings' 'apply-settings-activation'
     Assert-PsRollback 'rollback-during-cleanup' 'cleanup'
     Assert-PsScope 'known-text-scope'

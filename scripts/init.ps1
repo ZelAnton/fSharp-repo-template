@@ -170,8 +170,8 @@ $xmlFileExtensions = @('.fsproj', '.props', '.targets', '.slnx', '.config')
 
 $excludedDirs = @('.git', '.jj', 'bin', 'obj')
 
-function Test-Excluded([string]$fullPath) {
-    $rel = $fullPath.Substring($repoRoot.Length).TrimStart('\', '/')
+function Test-Excluded([string]$fullPath, [string]$traversalRoot) {
+    $rel = $fullPath.Substring($traversalRoot.Length).TrimStart('\', '/')
     foreach ($seg in ($rel -split '[\\/]')) {
         if ($excludedDirs -contains $seg) { return $true }
     }
@@ -215,7 +215,7 @@ function Assert-WritablePath([string]$path, [string]$operation) {
 function Copy-MutableTree([string]$sourceRoot, [string]$destinationRoot) {
     New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
     foreach ($item in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
-        if ($item.Name -eq '.git' -or (Test-Excluded $item.FullName)) { continue }
+        if ($item.Name -eq '.git' -or (Test-Excluded $item.FullName $sourceRoot)) { continue }
         $destination = Join-Path $destinationRoot $item.Name
         if ($item.PSIsContainer) { Copy-MutableTree $item.FullName $destination }
         else { Copy-Item -LiteralPath $item.FullName -Destination $destination -Force }
@@ -224,7 +224,7 @@ function Copy-MutableTree([string]$sourceRoot, [string]$destinationRoot) {
 
 function Remove-MutableTree([string]$root) {
     foreach ($item in (Get-ChildItem -LiteralPath $root -Force | Sort-Object { $_.FullName.Length } -Descending)) {
-        if ($item.Name -eq '.git' -or (Test-Excluded $item.FullName)) { continue }
+        if ($item.Name -eq '.git' -or (Test-Excluded $item.FullName $root)) { continue }
         if ($item.PSIsContainer) {
             Remove-MutableTree $item.FullName
             if (-not (Get-ChildItem -LiteralPath $item.FullName -Force)) { Remove-Item -LiteralPath $item.FullName -Force }
@@ -261,7 +261,7 @@ $pathComparer = if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [
 $renameTargets = [System.Collections.Generic.HashSet[string]]::new($pathComparer)
 $renamePlan = [System.Collections.Generic.List[object]]::new()
 $named = Get-ChildItem -Path $repoRoot -Recurse -Force | Where-Object {
-    -not (Test-Excluded $_.FullName) -and $_.Name -like '*__ProjectName__*'
+    -not (Test-Excluded $_.FullName $repoRoot) -and $_.Name -like '*__ProjectName__*'
 } | Sort-Object { $_.FullName.Length } -Descending
 foreach ($item in $named) {
     $newName = $item.Name.Replace('__ProjectName__', $ProjectName)
