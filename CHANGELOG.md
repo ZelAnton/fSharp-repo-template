@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- Ordinary package builds no longer consume stale ignored release notes; release notes are supplied explicitly by the release workflow.
 - Both initializers now reject metadata control characters and line separators before mutating the checkout.
 - Bash initializer escaping now preserves backslashes in generated shell, Python, and JSON contexts.
 - Linux test runs now preserve existing NuGet cache volume names and use a Docker-safe fallback only for leading-underscore project names.

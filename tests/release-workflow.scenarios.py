@@ -110,6 +110,23 @@ def verify(
 
 
 class ReleaseWorkflowScenarios(unittest.TestCase):
+    def test_release_notes_are_an_explicit_pack_input(self) -> None:
+        project = (ROOT / "src" / "__ProjectName__" / "__ProjectName__.fsproj").read_text()
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertIn(
+            '<PackageReleaseNotes Condition="\'$(PackageReleaseNotesFile)\' != \'\'">'
+            "$([System.IO.File]::ReadAllText('$(PackageReleaseNotesFile)'))"
+            "</PackageReleaseNotes>",
+            project,
+        )
+        self.assertNotIn("Exists('$(RepoRoot)release-notes.md')", project)
+        self.assertNotIn("ReadAllText('$(RepoRoot)release-notes.md')", project)
+        self.assertIn(
+            "/p:PackageReleaseNotesFile=release-notes.md",
+            workflow,
+        )
+
     def test_release_tag_selection_is_strict_and_reachable(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         selection_start = workflow.index('          LATEST_TAG=""')

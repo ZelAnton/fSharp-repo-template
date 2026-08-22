@@ -12,7 +12,7 @@
 		<!-- <PackageTags>tag1;tag2</PackageTags> -->
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageReleaseNotes Condition="Exists('$(RepoRoot)release-notes.md')">$([System.IO.File]::ReadAllText('$(RepoRoot)release-notes.md'))</PackageReleaseNotes>
+		<PackageReleaseNotes Condition="'$(PackageReleaseNotesFile)' != ''">$([System.IO.File]::ReadAllText('$(PackageReleaseNotesFile)'))</PackageReleaseNotes>
 
 		<PackageProjectUrl>https://github.com/__GitHubOwner__/__ProjectName__</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/__GitHubOwner__/__ProjectName__</RepositoryUrl>

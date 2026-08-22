@@ -46,6 +46,10 @@ __ProjectName__.<version>.snupkg: OK
 The package on NuGet.org carries a repository signature from nuget.org. You can
 inspect it with `dotnet nuget verify __ProjectName__.<version>.nupkg --all`.
 
+Ordinary `dotnet pack` commands do not read the ignored root `release-notes.md`.
+The release workflow supplies its generated notes explicitly with
+`/p:PackageReleaseNotesFile=release-notes.md`.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

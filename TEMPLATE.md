@@ -176,6 +176,9 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
   note at the top of `.github/workflows/release.yml`. Once NuGet accepts the package,
   the workflow uploads an immutable recovery bundle so a partial VCS/GitHub phase
   can be completed without rebuilding from a moved `main`.
+- **Release notes input** — ordinary `dotnet pack` commands ignore the local,
+  git-ignored `release-notes.md`; the release workflow passes that generated file
+  explicitly through `/p:PackageReleaseNotesFile=release-notes.md`.
 - **No CodeQL** — CodeQL has no F# support, so there is no CodeQL workflow. Static
   hygiene relies on `TreatWarningsAsErrors` and Fantomas; wire up F# analyzers
   (e.g. Ionide analyzers) through `Directory.Build.props` if you want more.
