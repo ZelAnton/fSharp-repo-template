@@ -178,6 +178,32 @@ function Test-Excluded([string]$fullPath) {
     return $false
 }
 
+$pathComparer = if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }
+$renameTargets = [System.Collections.Generic.HashSet[string]]::new($pathComparer)
+$renamePlan = [System.Collections.Generic.List[object]]::new()
+$named = Get-ChildItem -Path $repoRoot -Recurse -Force | Where-Object {
+    -not (Test-Excluded $_.FullName) -and $_.Name -like '*__ProjectName__*'
+} | Sort-Object { $_.FullName.Length } -Descending
+foreach ($item in $named) {
+    $newName = $item.Name.Replace('__ProjectName__', $ProjectName)
+    if ($newName -eq $item.Name) { continue }
+
+    $parentPath = [System.IO.Path]::GetDirectoryName($item.FullName)
+    $targetPath = Join-Path $parentPath $newName
+    if (Test-Path -LiteralPath $targetPath) {
+        throw "Cannot initialize: generated path collision for '$targetPath' (from '$($item.FullName)')."
+    }
+    if (-not $renameTargets.Add($targetPath)) {
+        throw "Cannot initialize: generated path collision because multiple paths target '$targetPath'."
+    }
+    $renamePlan.Add([pscustomobject]@{
+        Source  = $item.FullName
+        Target  = $targetPath
+        OldName = $item.Name
+        NewName = $newName
+    })
+}
+
 Write-Host "==> Initializing template as '$ProjectName'" -ForegroundColor Cyan
 
 # 1) Replace tokens in file contents. Both initializers are skipped: they carry
@@ -220,14 +246,11 @@ foreach ($file in $files) {
 Write-Host "    Updated contents in $contentChanged file(s)." -ForegroundColor DarkGray
 
 # 2) Rename files and folders whose name contains the project-name token.
-#    Deepest paths first so child renames don't invalidate parent paths.
-$named = Get-ChildItem -Path $repoRoot -Recurse -Force | Where-Object {
-    -not (Test-Excluded $_.FullName) -and $_.Name -like '*__ProjectName__*'
-} | Sort-Object { $_.FullName.Length } -Descending
-foreach ($item in $named) {
-    $newName = $item.Name.Replace('__ProjectName__', $ProjectName)
-    Rename-Item -LiteralPath $item.FullName -NewName $newName
-    Write-Host "    Renamed $($item.Name) -> $newName" -ForegroundColor DarkGray
+#    The complete plan was validated before content mutation; deepest paths
+#    are processed first so child renames don't invalidate parent paths.
+foreach ($rename in $renamePlan) {
+    Rename-Item -LiteralPath $rename.Source -NewName $rename.NewName
+    Write-Host "    Renamed $($rename.OldName) -> $($rename.NewName)" -ForegroundColor DarkGray
 }
 
 # 3) Activate the Claude Code shared settings. Shipped inert as a .template file
