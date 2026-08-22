@@ -256,6 +256,35 @@ json_escape() {
   done
   printf '%s' "$escaped"
 }
+
+rename_sources=()
+rename_destinations=()
+rename_targets=()
+while IFS= read -r -d '' item; do
+  case "$item" in
+    */.git/*|*/.jj/*|*/bin/*|*/obj/*) continue ;;
+  esac
+  dir="$(dirname "$item")"
+  base="$(basename "$item")"
+  newbase="${base//__ProjectName__/$project_name}"
+  if [ "$newbase" = "$base" ]; then
+    continue
+  fi
+
+  target="$dir/$newbase"
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    die "generated path collision: '$target' already exists (from '$item')."
+  fi
+  for planned_target in "${rename_targets[@]}"; do
+    if [ "$planned_target" = "$target" ]; then
+      die "generated path collision: multiple paths target '$target'."
+    fi
+  done
+  rename_sources+=("$item")
+  rename_destinations+=("$target")
+  rename_targets+=("$target")
+done < <(find "$repo_root" -depth -name '*__ProjectName__*' -print0)
+
 project_x="$(xml_escape "$project_name")"
 author_x="$(xml_escape "$author")"
 email_x="$(xml_escape "$author_email")"
@@ -348,21 +377,16 @@ done < <(find "$repo_root" -type d \( -name .git -o -name .jj -o -name bin -o -n
 echo "    Updated contents in $changed file(s)."
 
 # 2) Rename files and folders whose name contains the project-name token. -depth
-#    processes children before parents so a renamed dir doesn't invalidate paths
-#    (mirrors init.ps1's deepest-first sort). Covers src/__ProjectName__,
-#    tests/__ProjectName__.Tests, the .fsproj/.slnx/.sln.DotSettings.
-while IFS= read -r -d '' item; do
-  case "$item" in
-    */.git/*|*/.jj/*|*/bin/*|*/obj/*) continue ;;
-  esac
-  dir="$(dirname "$item")"
+#    processes children before parents so a renamed dir doesn't invalidate paths.
+#    The complete plan was validated before content mutation.
+for ((i = 0; i < ${#rename_sources[@]}; i++)); do
+  item="${rename_sources[i]}"
+  target="${rename_destinations[i]}"
   base="$(basename "$item")"
-  newbase="${base//__ProjectName__/$project_name}"
-  if [ "$newbase" != "$base" ]; then
-    mv "$item" "$dir/$newbase"
-    echo "    Renamed $base -> $newbase"
-  fi
-done < <(find "$repo_root" -depth -name '*__ProjectName__*' -print0)
+  newbase="$(basename "$target")"
+  mv -- "$item" "$target"
+  echo "    Renamed $base -> $newbase"
+done
 
 # 3) Activate the Claude Code shared settings. Shipped inert as a .template file
 #    so the template repository itself does not auto-grant any permissions.

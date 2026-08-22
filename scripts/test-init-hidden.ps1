@@ -46,6 +46,20 @@ function Assert-PsFailure([string]$name, [string]$expected, [string[]]$arguments
     Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
 }
 
+function Assert-PsCollisionFailure([string]$name) {
+    $caseRoot = Join-Path $tempRoot "failure-$name"
+    Copy-Template $caseRoot
+    New-Item -ItemType Directory -Path (Join-Path $caseRoot 'src/Acme.Widgets') | Out-Null
+    New-Item -ItemType File -Path (Join-Path $caseRoot 'Acme.Widgets.slnx') | Out-Null
+    $before = Get-Snapshot $caseRoot
+    $output = & pwsh -NoProfile -File (Join-Path $caseRoot 'scripts/init.ps1') -ProjectName Acme.Widgets -KeepScript 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0) {
+        throw "expected initializer failure for $name"
+    }
+    Assert-True (($output -replace '\s+', ' ') -match 'generated path collision') "missing collision diagnostic for ${name}: $output"
+    Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
+}
+
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('fsharp-template-init-hidden-' + [Guid]::NewGuid().ToString('N'))
 $projectToken = '__' + 'ProjectName__'
@@ -67,6 +81,7 @@ try {
         '-ProjectName', 'Acme.Widgets', '-Description', 'prefix__Author__suffix')
     Assert-PsFailure 'unsafe-owner' 'Invalid -GitHubOwner' @(
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
+    Assert-PsCollisionFailure 'generated-name-collision'
 
     foreach ($entry in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
         if ($entry.Name -ne '.git') {
