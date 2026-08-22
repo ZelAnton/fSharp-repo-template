@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - PowerShell initialization now applies author and email fallbacks when Git is unavailable while preserving explicit metadata.
+- CI and releases now fail when NUnit discovers or executes zero tests, and require TRX results.
 - Initializers now reject dangling local `.claude/settings.json` links and Bash activation no longer overwrites a destination created after preflight.
 - Initializers now refuse to overwrite an existing local `.claude/settings.json`.
 - Releases now fail preflight when project metadata still contains template tokens or default placeholders.

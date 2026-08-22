@@ -18,6 +18,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 VERIFIER = ROOT / "scripts" / "verify-nuget-package.py"
+TEST_RESULT_VERIFIER = ROOT / "scripts" / "verify-test-results.py"
 
 
 def run(command: list[str], cwd: pathlib.Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -110,6 +111,68 @@ def verify(
 
 
 class ReleaseWorkflowScenarios(unittest.TestCase):
+    def test_ci_and_release_require_verified_nunit_trx_results(self) -> None:
+        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        test_command = (
+            'dotnet test --no-build --configuration Release '
+            '--logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults'
+        )
+        verify_command = "python scripts/verify-test-results.py --results-directory ./TestResults"
+        release_verify_command = "python3 scripts/verify-test-results.py --results-directory ./TestResults"
+
+        self.assertIn(test_command, ci)
+        self.assertIn(verify_command, ci)
+        self.assertIn("if-no-files-found: error", ci)
+        self.assertIn(test_command, release)
+        self.assertIn(release_verify_command, release)
+
+    def test_test_result_verifier_rejects_missing_or_empty_nunit_results(self) -> None:
+        valid_report = """\
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results><UnitTestResult testId="nunit-1" outcome="Passed" /></Results>
+  <TestDefinitions>
+    <UnitTest id="nunit-1">
+      <TestMethod adapterTypeName="executor://nunit3testexecutor/" />
+    </UnitTest>
+  </TestDefinitions>
+  <ResultSummary><Counters total="1" executed="1" /></ResultSummary>
+</TestRun>
+"""
+        empty_report = valid_report.replace('total="1" executed="1"', 'total="0" executed="0"')
+
+        with tempfile.TemporaryDirectory() as directory:
+            results = pathlib.Path(directory)
+            missing = subprocess.run(
+                [sys.executable, str(TEST_RESULT_VERIFIER), "--results-directory", str(results)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("no .trx files", missing.stderr)
+
+            report = results / "test-results.trx"
+            report.write_text(empty_report, encoding="utf-8")
+            empty = subprocess.run(
+                [sys.executable, str(TEST_RESULT_VERIFIER), "--results-directory", str(results)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(empty.returncode, 0)
+            self.assertIn("no executed NUnit tests", empty.stderr)
+
+            report.write_text(valid_report, encoding="utf-8")
+            valid = subprocess.run(
+                [sys.executable, str(TEST_RESULT_VERIFIER), "--results-directory", str(results)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            self.assertIn("total=1, executed=1 NUnit tests", valid.stdout)
+
     def test_metadata_preflight_rejects_all_template_defaults_before_build(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         checkout = workflow.index("      - uses: actions/checkout")

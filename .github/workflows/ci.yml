@@ -103,6 +103,9 @@ jobs:
       - name: Test
         run: dotnet test --no-build --configuration Release --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
 
+      - name: Verify test results
+        run: python scripts/verify-test-results.py --results-directory ./TestResults
+
       # Test results are uploaded even when the Test step fails, so a red CI run
       # can be diagnosed from the .trx without re-running locally.
       - name: Upload test results
@@ -111,4 +114,4 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: ./TestResults/*.trx
-          if-no-files-found: ignore
+          if-no-files-found: error
