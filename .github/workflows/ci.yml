@@ -36,6 +36,9 @@ jobs:
       - name: Check yamllint dependency contract
         run: python tests/ci-tooling/test_yamllint_contract.py
 
+      - name: Check SDK and FSharp.Core alignment
+        run: python tests/ci-tooling/test_sdk_alignment.py
+
       # Config is .yamllint.yml — tuned for Actions YAML. Real defects (tabs,
       # duplicate keys, bad indentation) fail; cosmetic line-length stays a
       # non-failing warning.
@@ -59,7 +62,7 @@ jobs:
 
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.301'
 
       # Fantomas is the F# formatter and this repo's style authority — the F#
       # compiler does not enforce .editorconfig style the way Roslyn does for C#.
@@ -80,7 +83,7 @@ jobs:
 
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.301'
 
       # Cache the global NuGet package folder across runs. Keyed on the central
       # version files so the cache invalidates only when dependencies change.
