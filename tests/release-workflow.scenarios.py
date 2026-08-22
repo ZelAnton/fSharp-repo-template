@@ -6,6 +6,7 @@ from __future__ import annotations
 import http.server
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -157,6 +158,50 @@ class ReleaseWorkflowScenarios(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(result.stdout.decode().strip(), "v1.10.0")
+
+    def test_release_ref_guard_treats_ref_as_environment_data(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        guard_start = workflow.index("      - name: Guard ")
+        guard_end = workflow.index("\n      - name:", guard_start + 1)
+        guard = workflow[guard_start:guard_end]
+        run_start = guard.index("        run: |\n") + len("        run: |\n")
+        run_lines = []
+        for line in guard[run_start:].splitlines():
+            if not line.startswith("          "):
+                break
+            run_lines.append(line[10:])
+        script = "\n".join(run_lines) + "\n"
+
+        self.assertIn("        env:\n          RELEASE_REF: ${{ github.ref }}", guard)
+        self.assertNotIn("${{ github.ref }}", script)
+        self.assertIn('[[ "$RELEASE_REF" != "refs/heads/main" ]]', script)
+
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash, "bash is required to execute the release ref guard")
+
+        malicious_ref = "refs/heads/evil$(printf injected >&2)"
+        rejected = subprocess.run(
+            [bash],
+            cwd=ROOT,
+            check=False,
+            input=(f"RELEASE_REF={shlex.quote(malicious_ref)}\n{script}").encode(),
+            capture_output=True,
+        )
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertNotIn("injected", rejected.stderr.decode())
+        self.assertIn(malicious_ref, rejected.stdout.decode())
+
+        accepted = subprocess.run(
+            [bash],
+            cwd=ROOT,
+            check=False,
+            input=(f"RELEASE_REF={shlex.quote('refs/heads/main')}\n{script}").encode(),
+            capture_output=True,
+        )
+
+        self.assertEqual(accepted.returncode, 0, accepted.stderr.decode())
+        self.assertIn("Dispatched from main.", accepted.stdout.decode())
 
     def test_package_identity_and_retry_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
