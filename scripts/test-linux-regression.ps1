@@ -137,11 +137,17 @@ exit 0
     Assert-True (-not $withoutFilterBash.Script.Contains('--filter')) 'the no-filter invocation must not add a filter'
     Assert-True ($withoutFilterBash.Arguments.Count -eq ($withoutFilterBash.BashIndex + 3)) 'the no-filter invocation must not add positional filter data'
 
+    $validNameHelperPath = Join-Path $temporaryRoot 'scripts\test-linux-valid-name.ps1'
+    $temporaryRepoRoot = $temporaryRoot -replace '\\', '/'
+    (Get-Content -LiteralPath $helperPath -Raw).Replace('__ProjectName__', 'Acme.Widgets') |
+        Set-Content -LiteralPath $validNameHelperPath -Encoding utf8
+    $validName = Invoke-Helper $validNameHelperPath $capturePath @()
+    Assert-CommonDockerArguments $validName $temporaryRepoRoot 'Acme.Widgets-nuget' 'Acme.Widgets'
+
     (Get-Content -LiteralPath $helperPath -Raw).Replace('__ProjectName__', '_Library') |
         Set-Content -LiteralPath $leadingUnderscoreHelperPath -Encoding utf8
-    $leadingUnderscoreRepoRoot = $temporaryRoot -replace '\\', '/'
     $leadingUnderscore = Invoke-Helper $leadingUnderscoreHelperPath $capturePath @()
-    Assert-CommonDockerArguments $leadingUnderscore $leadingUnderscoreRepoRoot 'nuget-_Library' '_Library'
+    Assert-CommonDockerArguments $leadingUnderscore $temporaryRepoRoot 'nuget-_Library' '_Library'
 
     $adversarialFilter = 'FullyQualifiedName~Tests."Quoted"; printf INJECTION >&2; #'
     $withFilter = Invoke-Helper $helperPath $capturePath @(

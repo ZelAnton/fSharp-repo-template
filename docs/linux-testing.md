@@ -23,7 +23,10 @@ The script mounts the repo into `mcr.microsoft.com/dotnet/sdk:10.0` and runs
 `dotnet build` + `dotnet test`. The host's `bin/` and `obj/` folders are
 shadowed inside the container with anonymous volumes, so the Linux build
 neither sees the Windows IDE artifacts nor writes back into the host tree.
-A named volume (`__ProjectName__-nuget`) caches NuGet packages between runs.
+For a normal project name, the named volume `<ProjectName>-nuget` caches NuGet
+packages between runs, preserving the established cache name. If the project
+name begins with `_`, Docker's leading-character restriction requires the
+fallback name `nuget-<ProjectName>` instead.
 
 Useful switches:
 
