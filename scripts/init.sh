@@ -167,11 +167,30 @@ fi
 [ -n "$description" ]  || description="TODO: project description"
 [ -n "$year" ]         || year="$(date +%Y)"
 
+metadata_value_has_control_character() {
+  local value="$1"
+  local char
+  local i
+
+  # Match each character instead of piping to grep, whose line-oriented input
+  # treats an embedded newline as a separator rather than as matchable data.
+  for ((i = 0; i < ${#value}; i++)); do
+    char="${value:i:1}"
+    case "$char" in
+      [[:cntrl:]]) return 0 ;;
+    esac
+  done
+
+  case "$value" in
+    *$'\u2028'*|*$'\u2029'*) return 0 ;;
+  esac
+  return 1
+}
+
 validate_metadata() {
   local option="$1"
   local value="$2"
-  if LC_ALL=C printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]]' ||
-     case "$value" in *$'\u2028'*|*$'\u2029'*) true ;; *) false ;; esac; then
+  if metadata_value_has_control_character "$value"; then
     die "invalid $option: metadata values must not contain control characters or line separators."
   fi
   case "$value" in

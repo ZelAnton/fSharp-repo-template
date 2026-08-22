@@ -54,8 +54,15 @@ $ownerToken = '__' + 'GitHubOwner__'
 try {
     New-Item -ItemType Directory -Path $tempRoot | Out-Null
 
-    Assert-PsFailure 'control-author' 'Invalid -Author' @(
-        '-ProjectName', 'Acme.Widgets', '-Author', "bad`nname")
+    $controlAuthors = [ordered]@{
+        newline = "bad`nname"
+        tab = "bad`tname"
+        carriageReturn = "bad`rname"
+    }
+    foreach ($entry in $controlAuthors.GetEnumerator()) {
+        Assert-PsFailure ("control-author-" + $entry.Key) 'Invalid -Author' @(
+            '-ProjectName', 'Acme.Widgets', '-Author', $entry.Value)
+    }
     Assert-PsFailure 'token-description' 'Invalid -Description' @(
         '-ProjectName', 'Acme.Widgets', '-Description', 'prefix__Author__suffix')
     Assert-PsFailure 'unsafe-owner' 'Invalid -GitHubOwner' @(

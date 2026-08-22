@@ -96,7 +96,7 @@ run_context_case() {
   printf '%s\n' '{"author":"__Author__"}' > "$checkout/metadata.json"
   printf '%s\n' 'value: "__Author__"' > "$checkout/metadata.yaml"
   printf '%s\n' 'value = "__Author__"' > "$checkout/metadata.py"
-  printf '%s\n' 'printf "%%s\\n" "__Author__"' > "$checkout/metadata.sh"
+  printf '%s\n' 'printf "%s\\n" "__Author__"' > "$checkout/metadata.sh"
 
   (cd "$checkout" && bash scripts/init.sh \
     --project-name Acme.Widgets \
@@ -119,7 +119,7 @@ assert json.loads((root / "metadata.json").read_text())["author"] == author
 expected_json = json.dumps(author, ensure_ascii=False)
 assert (root / "metadata.yaml").read_text().rstrip("\n") == "value: " + expected_json
 assert (root / "metadata.py").read_text().rstrip("\n") == "value = " + expected_json
-assert ET.parse(root / "src/Acme.Widgets/Acme.Widgets.fsproj").findtext("Authors") == author
+assert ET.parse(root / "src/Acme.Widgets/Acme.Widgets.fsproj").findtext("PropertyGroup/Authors") == author
 namespace = {}
 exec(compile((root / "metadata.py").read_text(), str(root / "metadata.py"), "exec"), namespace)
 assert namespace["value"] == author
@@ -155,10 +155,16 @@ done
 
 run_failure_case 'invalid-year' "invalid --year 'not-a-year'" \
   --project-name Acme.Widgets --year not-a-year
-control_author='bad
+control_author_newline='bad
 name'
-run_failure_case 'control-author' 'metadata values must not contain control characters' \
-  --project-name Acme.Widgets --author "$control_author"
+run_failure_case 'control-author-newline' 'metadata values must not contain control characters' \
+  --project-name Acme.Widgets --author "$control_author_newline"
+control_author_tab=$'bad\tname'
+run_failure_case 'control-author-tab' 'metadata values must not contain control characters' \
+  --project-name Acme.Widgets --author "$control_author_tab"
+control_author_carriage_return=$'bad\rname'
+run_failure_case 'control-author-carriage-return' 'metadata values must not contain control characters' \
+  --project-name Acme.Widgets --author "$control_author_carriage_return"
 run_failure_case 'token-description' 'metadata values must not contain template tokens' \
   --project-name Acme.Widgets --description 'prefix__Author__suffix'
 run_failure_case 'unsafe-owner' 'invalid --github-owner' \
