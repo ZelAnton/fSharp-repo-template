@@ -81,6 +81,57 @@ run_success_case() {
   }
 }
 
+run_context_case() {
+  local name="$1"
+  local checkout="$test_root/$name"
+  local author='O"Reilly & Sons; $HOME `id`'
+  mkdir -p "$checkout"
+  (
+    cd "$repo_root"
+    tar --exclude='./.git' --exclude='*/bin' --exclude='*/obj' -cf - .
+  ) | (
+    cd "$checkout"
+    tar -xf -
+  )
+  printf '%s\n' '{"author":"__Author__"}' > "$checkout/metadata.json"
+  printf '%s\n' 'value: "__Author__"' > "$checkout/metadata.yaml"
+  printf '%s\n' 'value = "__Author__"' > "$checkout/metadata.py"
+  printf '%s\n' 'printf "%%s\\n" "__Author__"' > "$checkout/metadata.sh"
+
+  (cd "$checkout" && bash scripts/init.sh \
+    --project-name Acme.Widgets \
+    --author "$author" \
+    --author-email 'dev+tag@example.com' \
+    --github-owner acme-tools \
+    --description 'Widget toolkit' \
+    --year 2026 \
+    --keep-script >/dev/null)
+
+  python3 - "$checkout" "$author" <<'PY'
+import json
+import pathlib
+import sys
+import xml.etree.ElementTree as ET
+
+root = pathlib.Path(sys.argv[1])
+author = sys.argv[2]
+assert json.loads((root / "metadata.json").read_text())["author"] == author
+assert (root / "metadata.yaml").read_text().rstrip("\n") == 'value: "O\\"Reilly & Sons; $HOME `id`"'
+assert (root / "metadata.py").read_text().rstrip("\n") == 'value = "O\\"Reilly & Sons; $HOME `id`"'
+assert ET.parse(root / "src/Acme.Widgets/Acme.Widgets.fsproj").findtext("Authors") == author
+compile((root / "metadata.py").read_text(), str(root / "metadata.py"), "exec")
+PY
+  [ "$(cd "$checkout" && bash metadata.sh)" = "$author" ] || {
+    printf 'shell context did not preserve metadata for %s\n' "$name" >&2
+    return 1
+  }
+  grep -F -- 'git config user.name "O\"Reilly & Sons; \$HOME \`id\`"' \
+    "$checkout/.github/workflows/release.yml" >/dev/null || {
+    printf 'workflow shell context was not escaped for %s\n' "$name" >&2
+    return 1
+  }
+}
+
 value_options=(--project-name --author --author-email --github-owner --description --year)
 for option in "${value_options[@]}"; do
   if [ "$option" = '--project-name' ]; then
@@ -101,6 +152,14 @@ done
 
 run_failure_case 'invalid-year' "invalid --year 'not-a-year'" \
   --project-name Acme.Widgets --year not-a-year
+control_author='bad
+name'
+run_failure_case 'control-author' 'metadata values must not contain control characters' \
+  --project-name Acme.Widgets --author "$control_author"
+run_failure_case 'token-description' 'metadata values must not contain template tokens' \
+  --project-name Acme.Widgets --description 'prefix__Author__suffix'
+run_failure_case 'unsafe-owner' 'invalid --github-owner' \
+  --project-name Acme.Widgets --github-owner 'acme;touch-pwned'
 
 run_success_case 'year-upper-boundary' '2147483647' \
   --project-name Acme.Widgets --year 2147483647 --keep-script
@@ -110,5 +169,6 @@ run_failure_case 'year-above-upper-boundary' "invalid --year '2147483648'" \
   --project-name Acme.Widgets --year 2147483648 --keep-script
 run_failure_case 'year-below-lower-boundary' "invalid --year '-2147483649'" \
   --project-name Acme.Widgets --year -2147483649 --keep-script
+run_context_case 'encoded-metadata'
 
 printf 'Bash initializer CLI regression checks passed.\n'
