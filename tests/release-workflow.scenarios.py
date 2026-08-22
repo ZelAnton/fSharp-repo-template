@@ -110,6 +110,33 @@ def verify(
 
 
 class ReleaseWorkflowScenarios(unittest.TestCase):
+    def test_first_release_uses_full_history_without_synthetic_tag(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertNotIn("Ensure previous tag exists", workflow)
+        self.assertNotIn('CURRENT="0.0.0"', workflow)
+        self.assertIn('echo "previous_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"', workflow)
+
+        auto_fill_start = workflow.index("      - name: Auto-fill [Unreleased] from git log if empty")
+        auto_fill_end = workflow.index("\n      - name:", auto_fill_start + 1)
+        auto_fill = workflow[auto_fill_start:auto_fill_end]
+        self.assertIn('PREV_TAG: ${{ steps.version.outputs.previous_tag }}', auto_fill)
+        self.assertIn('command = ["git-cliff", "--config", "cliff.toml", "--strip", "all"]', auto_fill)
+        self.assertIn('if prev_tag:', auto_fill)
+        self.assertIn('command.append(f"{prev_tag}..HEAD")', auto_fill)
+        self.assertIn('generating from the full git history for the first release', auto_fill)
+
+    def test_first_release_changelog_link_points_to_published_tag(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        promote_start = workflow.index("      - name: Promote Unreleased section in CHANGELOG.md")
+        promote_end = workflow.index("\n      # Create the release commit", promote_start)
+        promote = workflow[promote_start:promote_end]
+
+        self.assertIn('PREV_TAG: ${{ steps.version.outputs.previous_tag }}', promote)
+        self.assertIn('f"[{version}]: {repo}/releases/tag/{tag}"', promote)
+        self.assertIn('f"[{version}]: {repo}/compare/{prev_tag}...{tag}"', promote)
+        self.assertNotIn("compare/{prev_tag}...{tag}\"\n\"", promote)
+
     def test_final_changelog_is_packed_after_promotion(self) -> None:
         project = (ROOT / "src" / "__ProjectName__" / "__ProjectName__.fsproj").read_text()
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()

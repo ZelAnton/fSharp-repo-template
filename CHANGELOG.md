@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- First releases now include the full relevant history and use a valid release-tag changelog link.
 - Release packages now verify that the finalized versioned CHANGELOG.md is included unchanged.
 - Ordinary package builds no longer consume stale ignored release notes; release notes are supplied explicitly by the release workflow.
 - Both initializers now reject metadata control characters and line separators before mutating the checkout.

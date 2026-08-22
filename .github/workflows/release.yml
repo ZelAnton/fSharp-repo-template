@@ -134,8 +134,8 @@ jobs:
           else
             # First release: take the seed version straight from the .fsproj <Version>
             # so the published version matches what the repo declares, instead of an
-            # implicit 0.0.1 from bumping a synthetic 0.0.0. The bump input is ignored.
-            CURRENT="0.0.0"
+            # implicit 0.0.1 from applying the bump input. The bump input is ignored.
+            CURRENT=""
             NEW=$(grep -oP '(?<=<Version>)[^<]+' src/__ProjectName__/__ProjectName__.fsproj | head -n1)
             echo "No release tags found; seeding first release from .fsproj <Version>=$NEW (bump input ignored)."
           fi
@@ -144,6 +144,7 @@ jobs:
             exit 1
           fi
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
           echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
 
@@ -167,29 +168,6 @@ jobs:
           echo "date=$(git show -s --format=%cs HEAD)" >> "$GITHUB_OUTPUT"
           echo "commit-date=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
 
-      # Only git-cliff (next step) needs the previous tag, and only LOCALLY, to bound
-      # its commit range. So when the previous tag is missing (the synthetic v0.0.0 of
-      # a first release) create it locally and DO NOT push it to origin. Pushing it
-      # would be a remote write before the irreversible publish pivot AND would break
-      # first-release re-run safety: a pushed v0.0.0 matches the version glob in
-      # "Determine next version", so a re-run after a pre-publish failure would bump
-      # 0.0.0 -> 0.0.1 instead of re-seeding the intended version from the .fsproj.
-      # Keeping it local means a re-run re-derives the same seed version. (Trade-off:
-      # the first release's "compare/v0.0.0...vX" changelog link 404s because v0.0.0
-      # is not on origin — harmless, as nothing precedes the first release.)
-      - name: Ensure previous tag exists (local only)
-        env:
-          PREV_TAG: v${{ steps.version.outputs.current }}
-        run: |
-          set -euo pipefail
-          if git rev-parse "$PREV_TAG" >/dev/null 2>&1; then
-            echo "Previous tag $PREV_TAG already exists."
-            exit 0
-          fi
-          ROOT=$(git rev-list --max-parents=0 HEAD | tail -n1)
-          echo "Previous tag $PREV_TAG does not exist; creating it locally at root commit $ROOT (not pushed)."
-          git tag "$PREV_TAG" "$ROOT"
-
       - name: Install git-cliff
         uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
         with:
@@ -197,7 +175,7 @@ jobs:
 
       - name: Auto-fill [Unreleased] from git log if empty
         env:
-          PREV_TAG: v${{ steps.version.outputs.current }}
+          PREV_TAG: ${{ steps.version.outputs.previous_tag }}
         run: |
           set -euo pipefail
           python3 <<'PY'
@@ -222,17 +200,23 @@ jobs:
               print("[Unreleased] already has manual entries; skipping auto-fill.")
               sys.exit(0)
 
-          print(f"[Unreleased] is empty; generating from git log since {prev_tag}...")
+          command = ["git-cliff", "--config", "cliff.toml", "--strip", "all"]
+          if prev_tag:
+              command.append(f"{prev_tag}..HEAD")
+              print(f"[Unreleased] is empty; generating from git log since {prev_tag}...")
+          else:
+              print("[Unreleased] is empty; generating from the full git history for the first release...")
           result = subprocess.run(
-              ["git-cliff", "--config", "cliff.toml", "--strip", "all", f"{prev_tag}..HEAD"],
+              command,
               check=True,
               capture_output=True,
               text=True,
           )
           generated = result.stdout.strip()
           if not generated:
+              range_description = f" between {prev_tag} and HEAD" if prev_tag else ""
               print(
-                  f"::error::No release-worthy commits found between {prev_tag} and HEAD. "
+                  f"::error::No release-worthy commits found{range_description}. "
                   "Either add a manual entry to [Unreleased] in CHANGELOG.md, or commit "
                   "changes with a recognised prefix (Add/Fix/Refactor/Update/Remove/...).",
                   file=sys.stderr,
@@ -294,7 +278,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
-          PREV_TAG: v${{ steps.version.outputs.current }}
+          PREV_TAG: ${{ steps.version.outputs.previous_tag }}
           RELEASE_DATE: ${{ steps.release-source.outputs.date }}
         run: |
           set -euo pipefail
@@ -325,10 +309,12 @@ jobs:
               print("::error::Could not find '## [Unreleased]' header in CHANGELOG.md", file=sys.stderr)
               sys.exit(1)
 
-          link_replacement = (
-              f"[Unreleased]: {repo}/compare/{tag}...HEAD\n"
+          version_link = (
               f"[{version}]: {repo}/compare/{prev_tag}...{tag}"
+              if prev_tag
+              else f"[{version}]: {repo}/releases/tag/{tag}"
           )
+          link_replacement = f"[Unreleased]: {repo}/compare/{tag}...HEAD\n{version_link}"
           text, n = re.subn(r"^\[Unreleased\]:.*$", link_replacement, text, count=1, flags=re.M)
           if n != 1:
               print("::error::Could not find '[Unreleased]: ...' reference link in CHANGELOG.md", file=sys.stderr)
