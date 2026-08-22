@@ -110,6 +110,34 @@ def verify(
 
 
 class ReleaseWorkflowScenarios(unittest.TestCase):
+    def test_final_changelog_is_packed_after_promotion(self) -> None:
+        project = (ROOT / "src" / "__ProjectName__" / "__ProjectName__.fsproj").read_text()
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertIn(
+            '<None Include="$(RepoRoot)CHANGELOG.md" Pack="true" PackagePath="\\" />',
+            project,
+        )
+
+        promote = workflow.index("      - name: Promote Unreleased section in CHANGELOG.md")
+        commit = workflow.index("      - name: Commit and tag the release (local only)")
+        pack = workflow.index("      - name: Pack")
+        verify = workflow.index("      - name: Verify packed final CHANGELOG")
+        checksums = workflow.index("      - name: Generate SHA256SUMS")
+        pivot = workflow.index("      - name: Push to NuGet.org (irreversible pivot)")
+        self.assertLess(promote, commit)
+        self.assertLess(commit, pack)
+        self.assertLess(pack, verify)
+        self.assertLess(verify, checksums)
+        self.assertLess(checksums, pivot)
+
+        verification = workflow[verify:checksums]
+        self.assertIn('glob("*.nupkg")', verification)
+        self.assertIn('archive.read("CHANGELOG.md")', verification)
+        self.assertIn('pathlib.Path("CHANGELOG.md").read_bytes()', verification)
+        self.assertIn('f"## [{version}] - ".encode()', verification)
+        self.assertIn("packed != expected", verification)
+
     def test_release_notes_are_an_explicit_pack_input(self) -> None:
         project = (ROOT / "src" / "__ProjectName__" / "__ProjectName__.fsproj").read_text()
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()

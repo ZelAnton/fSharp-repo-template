@@ -378,6 +378,39 @@ jobs:
       - name: Pack
         run: dotnet pack src/__ProjectName__/__ProjectName__.fsproj --no-build --configuration Release --output ./artifacts /p:Version=${{ steps.version.outputs.version }} /p:PackageReleaseNotesFile=release-notes.md
 
+      # The package must carry the same finalized changelog that was committed
+      # and tagged above. Fail before checksums or the NuGet pivot if pack ever
+      # reads a stale tree or drops the root release-state file.
+      - name: Verify packed final CHANGELOG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import pathlib
+          import zipfile
+
+          packages = sorted(pathlib.Path("artifacts").glob("*.nupkg"))
+          if len(packages) != 1:
+              raise SystemExit(f"Expected exactly one package, found {len(packages)}.")
+
+          expected = pathlib.Path("CHANGELOG.md").read_bytes()
+          version = os.environ["VERSION"]
+          if f"## [{version}] - ".encode() not in expected:
+              raise SystemExit(f"Final CHANGELOG.md is missing release section [{version}].")
+
+          with zipfile.ZipFile(packages[0]) as archive:
+              try:
+                  packed = archive.read("CHANGELOG.md")
+              except KeyError as error:
+                  raise SystemExit("Package does not contain root CHANGELOG.md.") from error
+
+          if packed != expected:
+              raise SystemExit("Packed CHANGELOG.md differs from the finalized working-tree file.")
+          print(f"Verified finalized CHANGELOG.md in {packages[0]}.")
+          PY
+
       - name: Generate SHA256SUMS
         run: |
           set -euo pipefail
