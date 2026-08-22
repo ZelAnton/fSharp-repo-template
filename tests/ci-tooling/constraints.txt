@@ -1,0 +1,5 @@
+# Exact runtime dependency closure for yamllint 1.38.0.
+# Update this file together with requirements.in when intentionally upgrading.
+PyYAML==6.0.3
+pathspec==1.1.1
+yamllint==1.38.0
