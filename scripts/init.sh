@@ -312,21 +312,36 @@ year_py="$(python_escape "$year")"
 
 echo "==> Initializing template as '$project_name'"
 
-# 1) Replace tokens in file contents. Both initializers are skipped: they carry
-#    the literal token strings as search keys, so substituting inside them would
-#    corrupt the sibling script.
+# 1) Replace tokens only in the template-owned text surface. User files are
+#    deliberately absent from this list, even when they use a familiar text
+#    extension or contain a placeholder-looking string.
+known_text_paths=(
+  '.claude/settings.json.template' '.config/dotnet-tools.json' '.editorconfig' '.gitattributes'
+  '.github/CODEOWNERS' '.github/dependabot.yml' '.github/PULL_REQUEST_TEMPLATE.md'
+  '.github/workflows/ci.yml' '.github/workflows/release.yml' '.gitignore' '.yamllint.yml'
+  'AGENTS.md' 'CHANGELOG.md' 'CLAUDE.md' 'CONTRIBUTING.md' 'Directory.Build.props'
+  'Directory.Packages.props' 'docs/AGENT-INIT-GUIDE.md' 'docs/linux-testing.md' 'global.json'
+  'LICENSE' 'README.md' 'SECURITY.md' 'TEMPLATE.md' '__ProjectName__.sln.DotSettings'
+  '__ProjectName__.slnx' 'cliff.toml' 'nuget.config' 'release-token-bypass.md'
+  'scripts/check-env.ps1' 'scripts/check-env.sh' 'scripts/test-linux-regression.ps1'
+  'scripts/test-linux.ps1' 'scripts/verify-nuget-package.py'
+  'src/__ProjectName__/Greeter.fs' 'src/__ProjectName__/__ProjectName__.fsproj'
+  'tests/__ProjectName__.Tests/GreeterTests.fs'
+  'tests/__ProjectName__.Tests/__ProjectName__.Tests.fsproj'
+  'tests/ci-tooling/constraints.txt' 'tests/ci-tooling/requirements.in'
+  'tests/ci-tooling/test_sdk_alignment.py' 'tests/ci-tooling/test_yamllint_contract.py'
+)
 changed=0
-while IFS= read -r -d '' file; do
+for relative_path in "${known_text_paths[@]}"; do
+  file="$repo_root/$relative_path"
+  [ -f "$file" ] || continue
   case "$file" in
     "$self"|"$sibling_ps1") continue ;;
   esac
-  # Skip binary files: they carry no tokens, and reading them through a shell
-  # command substitution strips NUL bytes ("ignored null byte in input"), which
-  # would corrupt the file on rewrite. The template ships none, but a downstream
-  # user may add e.g. a strong-name key or icon before running init.
-  case "$file" in
-    *.snk|*.pfx|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.zip) continue ;;
-  esac
+  # grep -I rejects NUL-containing files before command substitution can strip
+  # their bytes. The explicit path list above also prevents user files from
+  # reaching this read path at all.
+  LC_ALL=C grep -Iq '' "$file" || continue
   p="$project_name"; a="$author"; ae="$author_email"; o="$github_owner"; d="$description"; y="$year"
   case "$file" in
     *.fsproj|*.props|*.targets|*.slnx|*.config)
@@ -373,7 +388,7 @@ while IFS= read -r -d '' file; do
     printf '%s' "$content" > "$file"
     changed=$((changed + 1))
   fi
-done < <(find "$repo_root" -type d \( -name .git -o -name .jj -o -name bin -o -name obj \) -prune -o -type f -print0)
+done
 echo "    Updated contents in $changed file(s)."
 
 # 2) Rename files and folders whose name contains the project-name token. -depth

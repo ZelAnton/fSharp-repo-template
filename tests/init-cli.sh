@@ -145,29 +145,56 @@ run_context_case() {
     --keep-script >/dev/null)
 
   python3 - "$checkout" "$author" <<'PY'
-import json
 import pathlib
 import sys
 import xml.etree.ElementTree as ET
 
 root = pathlib.Path(sys.argv[1])
 author = sys.argv[2]
-assert json.loads((root / "metadata.json").read_text())["author"] == author
-expected_json = json.dumps(author, ensure_ascii=False)
-assert (root / "metadata.yaml").read_text().rstrip("\n") == "value: " + expected_json
-assert (root / "metadata.py").read_text().rstrip("\n") == "value = " + expected_json
+assert (root / "metadata.json").read_text().rstrip("\n") == '{"author":"__Author__"}'
+assert (root / "metadata.yaml").read_text().rstrip("\n") == 'value: "__Author__"'
+assert (root / "metadata.py").read_text().rstrip("\n") == 'value = "__Author__"'
+assert (root / "src/Acme.Widgets/Acme.Widgets.fsproj").exists()
 assert ET.parse(root / "src/Acme.Widgets/Acme.Widgets.fsproj").findtext("PropertyGroup/Authors") == author
-namespace = {}
-exec(compile((root / "metadata.py").read_text(), str(root / "metadata.py"), "exec"), namespace)
-assert namespace["value"] == author
 PY
-  [ "$(cd "$checkout" && bash metadata.sh)" = "$author" ] || {
-    printf 'shell context did not preserve metadata for %s\n' "$name" >&2
+  grep -F -- 'printf "%s\\n" "__Author__"' "$checkout/metadata.sh" >/dev/null || {
+    printf 'untracked shell file was rewritten for %s\n' "$name" >&2
     return 1
   }
   grep -F -- 'git config user.name "O\"Reilly \\Program Files\\Acme\\\"quoted\"\\bin & Sons; \$HOME \`id\`"' \
     "$checkout/.github/workflows/release.yml" >/dev/null || {
     printf 'workflow shell context was not escaped for %s\n' "$name" >&2
+    return 1
+  }
+}
+
+run_scope_case() {
+  local name="$1"
+  local checkout="$test_root/$name"
+  mkdir -p "$checkout"
+  (
+    cd "$repo_root"
+    tar --exclude='./.git' --exclude='*/bin' --exclude='*/obj' -cf - .
+  ) | (
+    cd "$checkout"
+    tar -xf -
+  )
+
+  mkdir -p "$checkout/local-state"
+  printf '%s\n' 'untracked __Author__ must stay unchanged' > "$checkout/local-state/notes.md"
+  printf 'prefix\0__Author__\377suffix' > "$checkout/local-state/payload.bin"
+  local text_before binary_before
+  text_before="$(cat "$checkout/local-state/notes.md")"
+  binary_before="$(sha256sum "$checkout/local-state/payload.bin" | cut -d' ' -f1)"
+
+  (cd "$checkout" && bash scripts/init.sh --project-name Acme.Widgets --author 'Generated Author' --keep-script >/dev/null)
+
+  [ "$(cat "$checkout/local-state/notes.md")" = "$text_before" ] || {
+    printf 'untracked text file was rewritten for %s\n' "$name" >&2
+    return 1
+  }
+  [ "$(sha256sum "$checkout/local-state/payload.bin" | cut -d' ' -f1)" = "$binary_before" ] || {
+    printf 'untracked binary file was rewritten for %s\n' "$name" >&2
     return 1
   }
 }
@@ -217,5 +244,6 @@ run_failure_case 'year-below-lower-boundary' "invalid --year '-2147483649'" \
   --project-name Acme.Widgets --year -2147483649 --keep-script
 run_collision_case 'generated-name-collision'
 run_context_case 'encoded-metadata'
+run_scope_case 'known-text-scope'
 
 printf 'Bash initializer CLI regression checks passed.\n'

@@ -60,6 +60,24 @@ function Assert-PsCollisionFailure([string]$name) {
     Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
 }
 
+function Assert-PsScope([string]$name) {
+    $caseRoot = Join-Path $tempRoot "scope-$name"
+    Copy-Template $caseRoot
+    $localState = Join-Path $caseRoot 'local-state'
+    New-Item -ItemType Directory -Path $localState | Out-Null
+    $textPath = Join-Path $localState 'notes.md'
+    $binaryPath = Join-Path $localState 'payload.bin'
+    [IO.File]::WriteAllText($textPath, 'untracked __Author__ must stay unchanged', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllBytes($binaryPath, [byte[]](0x70, 0x72, 0x65, 0x00, 0x5F, 0x5F, 0x41, 0x75, 0x74, 0x68, 0x6F, 0x72, 0x5F, 0x5F, 0xFF, 0x73))
+    $textBefore = [IO.File]::ReadAllText($textPath)
+    $binaryBefore = (Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash
+
+    & (Join-Path $caseRoot 'scripts/init.ps1') -ProjectName 'Acme.Widgets' -Author 'Generated Author' -KeepScript | Out-Null
+
+    Assert-True (([IO.File]::ReadAllText($textPath)) -ceq $textBefore) "untracked text file was rewritten for $name"
+    Assert-True ((Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash -ceq $binaryBefore) "untracked binary file was rewritten for $name"
+}
+
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('fsharp-template-init-hidden-' + [Guid]::NewGuid().ToString('N'))
 $projectToken = '__' + 'ProjectName__'
@@ -82,6 +100,7 @@ try {
     Assert-PsFailure 'unsafe-owner' 'Invalid -GitHubOwner' @(
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
     Assert-PsCollisionFailure 'generated-name-collision'
+    Assert-PsScope 'known-text-scope'
 
     foreach ($entry in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
         if ($entry.Name -ne '.git') {
@@ -113,7 +132,7 @@ try {
     $renamedFile = Join-Path $renamedDir 'file-Hidden.Test.txt'
     Assert-True (Test-Path -LiteralPath $renamedDir) 'Hidden token-named directory was not renamed.'
     Assert-True (Test-Path -LiteralPath $renamedFile) 'Hidden token-named file was not renamed.'
-    Assert-True ((Get-Content -LiteralPath $renamedFile -Raw) -eq 'Hidden.Test test-owner') 'Hidden token-named file content was not replaced.'
+    Assert-True ((Get-Content -LiteralPath $renamedFile -Raw) -eq ($projectToken + ' ' + $ownerToken)) 'Untracked token-named file content was rewritten.'
 
     $projectFile = Join-Path $tempRoot 'src/Hidden.Test/Hidden.Test.fsproj'
     Assert-True (Test-Path -LiteralPath $projectFile) 'Ordinary token-named project paths were not renamed.'
@@ -126,15 +145,10 @@ try {
     Set-Content -LiteralPath (Join-Path $contextRoot 'metadata.py') -Value 'value = "__Author__"' -NoNewline
     Set-Content -LiteralPath (Join-Path $contextRoot 'metadata.sh') -Value 'printf "%s\n" "__Author__"' -NoNewline
     & (Join-Path $contextRoot 'scripts/init.ps1') -ProjectName 'Acme.Widgets' -Author $author -AuthorEmail 'dev+tag@example.com' -GitHubOwner 'acme-tools' -Description 'Widget toolkit' -Year 2026 -KeepScript | Out-Null
-    $expectedJson = '"O\"Reilly \\Program Files\\Acme\\\"quoted\"\\bin & Sons; $HOME `id`"'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.json') -Raw) -eq ('{"author":' + $expectedJson + '}')) 'JSON metadata was not encoded.'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.yaml') -Raw) -eq ('value: ' + $expectedJson)) 'YAML metadata was not encoded.'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.py') -Raw) -eq ('value = ' + $expectedJson)) 'Python metadata was not encoded.'
-    $pythonValue = & python3 -c "import runpy, sys; print(runpy.run_path(sys.argv[1])['value'])" (Join-Path $contextRoot 'metadata.py')
-    Assert-True ($pythonValue -eq $author) 'Python metadata did not round-trip.'
-    $shellMetadata = Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.sh') -Raw
-    $expectedShellMetadata = 'printf "%s\n" "O\"Reilly \\Program Files\\Acme\\\"quoted\"\\bin & Sons; \$HOME \`id\`"'
-    Assert-True ($shellMetadata -eq $expectedShellMetadata) 'Shell metadata was not escaped.'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.json') -Raw) -eq '{"author":"__Author__"}') 'Untracked JSON metadata was rewritten.'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.yaml') -Raw) -eq 'value: "__Author__"') 'Untracked YAML metadata was rewritten.'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.py') -Raw) -eq 'value = "__Author__"') 'Untracked Python metadata was rewritten.'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.sh') -Raw) -eq 'printf "%s\n" "__Author__"') 'Untracked shell metadata was rewritten.'
     $xml = [xml](Get-Content -LiteralPath (Join-Path $contextRoot 'src/Acme.Widgets/Acme.Widgets.fsproj') -Raw)
     Assert-True ($xml.Project.PropertyGroup.Authors -eq $author) 'XML metadata did not round-trip.'
 

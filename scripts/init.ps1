@@ -206,17 +206,30 @@ foreach ($item in $named) {
 
 Write-Host "==> Initializing template as '$ProjectName'" -ForegroundColor Cyan
 
-# 1) Replace tokens in file contents. Both initializers are skipped: they carry
-#    the literal token strings as search keys, so substituting inside them would
-#    corrupt the sibling script (which -KeepScript leaves on disk).
-$siblingShPath = Join-Path $PSScriptRoot 'init.sh'
-$files = Get-ChildItem -Path $repoRoot -File -Recurse -Force | Where-Object {
-    -not (Test-Excluded $_.FullName) -and $_.FullName -ne $selfPath -and $_.FullName -ne $siblingShPath
+# 1) Replace tokens only in the template-owned text surface. User files are
+#    deliberately absent from this list, even when they use a familiar text
+#    extension or contain a placeholder-looking string.
+$knownTextPaths = @(
+    '.claude/settings.json.template', '.config/dotnet-tools.json', '.editorconfig', '.gitattributes',
+    '.github/CODEOWNERS', '.github/dependabot.yml', '.github/PULL_REQUEST_TEMPLATE.md',
+    '.github/workflows/ci.yml', '.github/workflows/release.yml', '.gitignore', '.yamllint.yml',
+    'AGENTS.md', 'CHANGELOG.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'Directory.Build.props',
+    'Directory.Packages.props', 'docs/AGENT-INIT-GUIDE.md', 'docs/linux-testing.md', 'global.json',
+    'LICENSE', 'README.md', 'SECURITY.md', 'TEMPLATE.md', '__ProjectName__.sln.DotSettings',
+    '__ProjectName__.slnx', 'cliff.toml', 'nuget.config', 'release-token-bypass.md',
+    'scripts/check-env.ps1', 'scripts/check-env.sh', 'scripts/test-linux-regression.ps1',
+    'scripts/test-linux.ps1', 'scripts/verify-nuget-package.py',
+    'src/__ProjectName__/Greeter.fs', 'src/__ProjectName__/__ProjectName__.fsproj',
+    'tests/__ProjectName__.Tests/GreeterTests.fs',
+    'tests/__ProjectName__.Tests/__ProjectName__.Tests.fsproj',
+    'tests/ci-tooling/constraints.txt', 'tests/ci-tooling/requirements.in',
+    'tests/ci-tooling/test_sdk_alignment.py', 'tests/ci-tooling/test_yamllint_contract.py'
+)
+$files = foreach ($relativePath in $knownTextPaths) {
+    $path = Join-Path $repoRoot $relativePath
+    if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path -Force }
 }
-# Binary extensions are skipped: they carry no tokens, and reading them as text
-# (then rewriting) would corrupt them. The template ships none, but a downstream
-# user may add e.g. a strong-name key or icon before running init.
-$binaryExtensions = @('.snk', '.pfx', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.zip')
+$strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
 $contentChanged = 0
 function Get-Replacements([string]$fullPath) {
     $relativePath = $fullPath.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
@@ -230,8 +243,14 @@ function Get-Replacements([string]$fullPath) {
     return $replacements
 }
 foreach ($file in $files) {
-    if ($binaryExtensions -contains $file.Extension) { continue }
-    $text = [System.IO.File]::ReadAllText($file.FullName)
+    $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+    if ([Array]::IndexOf[byte]($bytes, [byte]0) -ge 0) { continue }
+    try {
+        $text = $strictUtf8.GetString($bytes)
+    }
+    catch [System.Text.DecoderFallbackException] {
+        continue
+    }
     $new = $text
     $map = Get-Replacements $file.FullName
     $new = [regex]::Replace($text, $tokenPattern, [System.Text.RegularExpressions.MatchEvaluator]{
