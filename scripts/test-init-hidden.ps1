@@ -133,6 +133,40 @@ function Assert-PsScope([string]$name) {
     Assert-True ((Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash -ceq $binaryBefore) "untracked binary file was rewritten for $name"
 }
 
+function Assert-PsGitUnavailable([string]$name) {
+    $noGitRoot = Join-Path $tempRoot "no-git-$name"
+    $defaultRoot = Join-Path $tempRoot "no-git-defaults-$name"
+    $explicitRoot = Join-Path $tempRoot "no-git-explicit-$name"
+    Copy-Template $defaultRoot
+    Copy-Template $explicitRoot
+    New-Item -ItemType Directory -Path $noGitRoot | Out-Null
+    $pwshPath = (Get-Command -Name pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $originalPath = $env:PATH
+    try {
+        $env:PATH = $noGitRoot
+        $defaultOutput = & $pwshPath -NoProfile -File (Join-Path $defaultRoot 'scripts/init.ps1') -ProjectName Acme.Widgets -KeepScript 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "initializer failed without git: $defaultOutput" }
+
+        $defaultProject = [xml](Get-Content -LiteralPath (Join-Path $defaultRoot 'src/Acme.Widgets/Acme.Widgets.fsproj') -Raw)
+        Assert-True ($defaultProject.Project.PropertyGroup.Authors -ceq 'Your Name') 'PowerShell initializer did not apply the documented author fallback without git.'
+        $defaultWorkflow = Get-Content -LiteralPath (Join-Path $defaultRoot '.github/workflows/release.yml') -Raw
+        Assert-True ($defaultWorkflow -match 'git config user\.name "Your Name"') 'PowerShell initializer did not apply the documented author name fallback without git.'
+        Assert-True ($defaultWorkflow -match 'git config user\.email "you@example\.com"') 'PowerShell initializer did not apply the documented author email fallback without git.'
+
+        $explicitOutput = & $pwshPath -NoProfile -File (Join-Path $explicitRoot 'scripts/init.ps1') -ProjectName Acme.Widgets -Author 'Explicit Author' -AuthorEmail 'explicit@example.com' -KeepScript 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "initializer failed with explicit metadata without git: $explicitOutput" }
+
+        $explicitProject = [xml](Get-Content -LiteralPath (Join-Path $explicitRoot 'src/Acme.Widgets/Acme.Widgets.fsproj') -Raw)
+        Assert-True ($explicitProject.Project.PropertyGroup.Authors -ceq 'Explicit Author') 'PowerShell initializer changed an explicit author without git.'
+        $explicitWorkflow = Get-Content -LiteralPath (Join-Path $explicitRoot '.github/workflows/release.yml') -Raw
+        Assert-True ($explicitWorkflow -match 'git config user\.name "Explicit Author"') 'PowerShell initializer changed an explicit author name without git.'
+        Assert-True ($explicitWorkflow -match 'git config user\.email "explicit@example\.com"') 'PowerShell initializer changed an explicit author email without git.'
+    }
+    finally {
+        $env:PATH = $originalPath
+    }
+}
+
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('fsharp-template-init-hidden-' + [Guid]::NewGuid().ToString('N'))
 $projectToken = '__' + 'ProjectName__'
@@ -164,6 +198,7 @@ try {
     Assert-PsRollback 'rollback-after-settings' 'apply-settings-activation'
     Assert-PsRollback 'rollback-during-cleanup' 'cleanup'
     Assert-PsScope 'known-text-scope'
+    Assert-PsGitUnavailable 'defaults-and-explicit-values'
 
     foreach ($entry in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
         if ($entry.Name -ne '.git') {
