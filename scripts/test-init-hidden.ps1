@@ -209,7 +209,7 @@ try {
     }
     foreach ($entry in @(
             @{ Name = 'CON'; Base = 'CON' }
-            @{ Name = 'con'; Base = 'con' }
+            @{ Name = 'con.Tools'; Base = 'con' }
             @{ Name = 'AUX'; Base = 'AUX' }
             @{ Name = 'COM1'; Base = 'COM1' }
             @{ Name = 'LPT1'; Base = 'LPT1' }
