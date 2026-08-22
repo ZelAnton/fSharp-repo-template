@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- Initializer transformations now stage and roll back checkout changes when an intermediate operation fails.
 
 ### Fixed
 - Releases now fail preflight when project metadata still contains template tokens or default placeholders.

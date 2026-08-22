@@ -178,6 +178,85 @@ function Test-Excluded([string]$fullPath) {
     return $false
 }
 
+function Assert-DirectoryWritable([string]$directory, [string]$operation) {
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        throw "Preflight cannot $operation directory '$directory': it is missing."
+    }
+    $item = Get-Item -LiteralPath $directory -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+        throw "Preflight cannot $operation directory '$directory': it is read-only."
+    }
+    $probe = Join-Path $directory ".init-preflight-$([guid]::NewGuid().ToString('N'))"
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open($probe, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        $stream.Dispose()
+        $stream = $null
+        Remove-Item -LiteralPath $probe -Force -ErrorAction Stop
+    }
+    catch {
+        if ($stream) { $stream.Dispose() }
+        if (Test-Path -LiteralPath $probe) { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
+        throw "Preflight cannot $operation directory '$directory': $($_.Exception.Message)"
+    }
+}
+
+function Assert-WritablePath([string]$path, [string]$operation) {
+    if (Test-Path -LiteralPath $path) {
+        $item = Get-Item -LiteralPath $path -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+            throw "Preflight cannot $operation '$path': it is read-only."
+        }
+    }
+    Assert-DirectoryWritable (Split-Path -Path $path -Parent) $operation
+    if (Test-Path -LiteralPath $path -PathType Container) { Assert-DirectoryWritable $path $operation }
+}
+
+function Copy-MutableTree([string]$sourceRoot, [string]$destinationRoot) {
+    New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
+    foreach ($item in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
+        if ($item.Name -eq '.git' -or (Test-Excluded $item.FullName)) { continue }
+        $destination = Join-Path $destinationRoot $item.Name
+        if ($item.PSIsContainer) { Copy-MutableTree $item.FullName $destination }
+        else { Copy-Item -LiteralPath $item.FullName -Destination $destination -Force }
+    }
+}
+
+function Remove-MutableTree([string]$root) {
+    foreach ($item in (Get-ChildItem -LiteralPath $root -Force | Sort-Object { $_.FullName.Length } -Descending)) {
+        if ($item.Name -eq '.git' -or (Test-Excluded $item.FullName)) { continue }
+        if ($item.PSIsContainer) {
+            Remove-MutableTree $item.FullName
+            if (-not (Get-ChildItem -LiteralPath $item.FullName -Force)) { Remove-Item -LiteralPath $item.FullName -Force }
+        }
+        else { Remove-Item -LiteralPath $item.FullName -Force }
+    }
+}
+
+function Write-StagedFileAtomically([string]$source, [string]$destination, [string]$transactionId) {
+    $temporary = Join-Path (Split-Path -Path $destination -Parent) ".init-$transactionId-$([System.IO.Path]::GetRandomFileName())"
+    try {
+        Copy-Item -LiteralPath $source -Destination $temporary -Force
+        Move-Item -LiteralPath $temporary -Destination $destination -Force
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force -ErrorAction Stop }
+    }
+}
+
+function Invoke-FailureInjection([string]$boundary) {
+    if ($env:TEMPLATE_INIT_FAIL_AT -eq $boundary) { throw "Injected failure at '$boundary'." }
+}
+
+function Remove-TransactionRoot([string]$path) {
+    if ($env:TEMPLATE_INIT_FAIL_AT -eq 'cleanup' -and -not $script:cleanupFailureInjected) {
+        $script:cleanupFailureInjected = $true
+        throw "Injected failure at 'cleanup'."
+    }
+    if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }
+    if ($path -and (Test-Path -LiteralPath $path)) { throw "Transaction cleanup did not remove staging directory '$path'." }
+}
+
 $pathComparer = if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }
 $renameTargets = [System.Collections.Generic.HashSet[string]]::new($pathComparer)
 $renamePlan = [System.Collections.Generic.List[object]]::new()
@@ -231,7 +310,7 @@ $files = foreach ($relativePath in $knownTextPaths) {
     if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path -Force }
 }
 $strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
-$contentChanged = 0
+$contentPlans = [System.Collections.Generic.List[object]]::new()
 function Get-Replacements([string]$fullPath) {
     $relativePath = $fullPath.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
     $extension = [System.IO.Path]::GetExtension($fullPath).ToLowerInvariant()
@@ -259,40 +338,121 @@ foreach ($file in $files) {
         [string]$map[$match.Value]
     })
     if ($new -ne $text) {
-        [System.IO.File]::WriteAllText($file.FullName, $new, (New-Object System.Text.UTF8Encoding($false)))
-        $contentChanged++
+        Assert-WritablePath $file.FullName 'write'
+        $contentPlans.Add([pscustomobject]@{
+            RelativePath = $file.FullName.Substring($repoRoot.Length).TrimStart('\', '/')
+            Content      = $new
+        })
     }
 }
-Write-Host "    Updated contents in $contentChanged file(s)." -ForegroundColor DarkGray
-
-# 2) Rename files and folders whose name contains the project-name token.
-#    The complete plan was validated before content mutation; deepest paths
-#    are processed first so child renames don't invalidate parent paths.
-foreach ($rename in $renamePlan) {
-    Rename-Item -LiteralPath $rename.Source -NewName $rename.NewName
-    Write-Host "    Renamed $($rename.OldName) -> $($rename.NewName)" -ForegroundColor DarkGray
-}
-
-# 3) Activate the Claude Code shared settings. Shipped inert as a .template file
-#    so the template repository itself does not auto-grant any permissions.
 $claudeTemplate = Join-Path $repoRoot '.claude/settings.json.template'
-if (Test-Path $claudeTemplate) {
-    Move-Item -LiteralPath $claudeTemplate -Destination (Join-Path $repoRoot '.claude/settings.json') -Force
-    Write-Host "    Activated .claude/settings.json" -ForegroundColor DarkGray
-}
-
-# 4) Remove template-only files.
-foreach ($rel in @('TEMPLATE.md', 'docs/AGENT-INIT-GUIDE.md')) {
-    $path = Join-Path $repoRoot $rel
-    if (Test-Path $path) { Remove-Item -LiteralPath $path -Force }
-}
-# Drop docs/ if it's now empty (it may still hold linux-testing.md, in which
-# case it is kept).
+$claudeSettings = Join-Path $repoRoot '.claude/settings.json'
+$templateOnly = @('TEMPLATE.md', 'docs/AGENT-INIT-GUIDE.md')
 $docsDir = Join-Path $repoRoot 'docs'
-if ((Test-Path $docsDir) -and -not (Get-ChildItem -LiteralPath $docsDir -Force)) {
-    Remove-Item -LiteralPath $docsDir -Force
+if (Test-Path -LiteralPath $claudeTemplate) {
+    Assert-WritablePath $claudeTemplate 'activate settings'
+    Assert-WritablePath $claudeSettings 'activate settings'
+}
+foreach ($relativePath in $templateOnly) {
+    $path = Join-Path $repoRoot $relativePath
+    if (Test-Path -LiteralPath $path) { Assert-WritablePath $path 'remove' }
+}
+if (Test-Path -LiteralPath $docsDir) { Assert-WritablePath $docsDir 'remove' }
+$siblingSh = Join-Path $PSScriptRoot 'init.sh'
+if (-not $KeepScript) {
+    if (Test-Path -LiteralPath $siblingSh) { Assert-WritablePath $siblingSh 'remove' }
+    Assert-WritablePath $selfPath 'remove'
 }
 
+$transactionId = [guid]::NewGuid().ToString('N')
+$transactionRoot = Join-Path ([System.IO.Path]::GetTempPath()) "fsharp-template-init-$transactionId"
+$candidateRoot = Join-Path $transactionRoot 'candidate'
+$contentRoot = Join-Path $transactionRoot 'content'
+$rollbackRoot = Join-Path $transactionRoot 'rollback'
+$transactionStarted = $false
+$cleanupFailureInjected = $false
+
+try {
+    New-Item -ItemType Directory -Path $transactionRoot -Force | Out-Null
+    Copy-MutableTree $repoRoot $candidateRoot
+    foreach ($plan in $contentPlans) {
+        $candidatePath = Join-Path $candidateRoot $plan.RelativePath
+        [System.IO.File]::WriteAllText($candidatePath, $plan.Content, (New-Object System.Text.UTF8Encoding($false)))
+        $stagedPath = Join-Path $contentRoot $plan.RelativePath
+        New-Item -ItemType Directory -Path (Split-Path -Path $stagedPath -Parent) -Force | Out-Null
+        Copy-Item -LiteralPath $candidatePath -Destination $stagedPath -Force
+    }
+    Invoke-FailureInjection 'content-write'
+
+    foreach ($rename in $renamePlan) {
+        $candidateSource = Join-Path $candidateRoot $rename.Source.Substring($repoRoot.Length).TrimStart('\', '/')
+        Rename-Item -LiteralPath $candidateSource -NewName $rename.NewName
+    }
+    Invoke-FailureInjection 'path-rename'
+    $candidateTemplate = Join-Path $candidateRoot '.claude/settings.json.template'
+    if (Test-Path -LiteralPath $candidateTemplate) { Move-Item -LiteralPath $candidateTemplate -Destination (Join-Path $candidateRoot '.claude/settings.json') }
+    Invoke-FailureInjection 'settings-activation'
+    foreach ($relativePath in $templateOnly) {
+        $candidatePath = Join-Path $candidateRoot $relativePath
+        if (Test-Path -LiteralPath $candidatePath) { Remove-Item -LiteralPath $candidatePath -Force }
+    }
+    $candidateDocs = Join-Path $candidateRoot 'docs'
+    if ((Test-Path -LiteralPath $candidateDocs) -and -not (Get-ChildItem -LiteralPath $candidateDocs -Force)) { Remove-Item -LiteralPath $candidateDocs -Force }
+    if (-not $KeepScript) {
+        Remove-Item -LiteralPath (Join-Path $candidateRoot 'scripts/init.ps1') -Force
+        Remove-Item -LiteralPath (Join-Path $candidateRoot 'scripts/init.sh') -Force
+    }
+    Invoke-FailureInjection 'template-removal'
+
+    Copy-MutableTree $repoRoot $rollbackRoot
+    $transactionStarted = $true
+    Invoke-FailureInjection 'apply-content-write'
+    foreach ($plan in $contentPlans) {
+        Write-StagedFileAtomically (Join-Path $contentRoot $plan.RelativePath) (Join-Path $repoRoot $plan.RelativePath) $transactionId
+    }
+    Invoke-FailureInjection 'apply-path-rename'
+    foreach ($rename in $renamePlan) {
+        Rename-Item -LiteralPath $rename.Source -NewName $rename.NewName
+        Write-Host "    Renamed $($rename.OldName) -> $($rename.NewName)" -ForegroundColor DarkGray
+    }
+    Invoke-FailureInjection 'apply-settings-activation'
+    if (Test-Path -LiteralPath $claudeTemplate) {
+        Move-Item -LiteralPath $claudeTemplate -Destination $claudeSettings -Force
+        Write-Host '    Activated .claude/settings.json' -ForegroundColor DarkGray
+    }
+    Invoke-FailureInjection 'apply-template-removal'
+    foreach ($relativePath in $templateOnly) {
+        $path = Join-Path $repoRoot $relativePath
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+    }
+    if ((Test-Path -LiteralPath $docsDir) -and -not (Get-ChildItem -LiteralPath $docsDir -Force)) { Remove-Item -LiteralPath $docsDir -Force }
+    if (-not $KeepScript) {
+        if (Test-Path -LiteralPath $siblingSh) { Remove-Item -LiteralPath $siblingSh -Force }
+        Remove-Item -LiteralPath $selfPath -Force
+    }
+    Remove-TransactionRoot $transactionRoot
+    $transactionStarted = $false
+}
+catch {
+    $message = $_.Exception.Message
+    $rollbackMessage = $null
+    $cleanupMessage = $null
+    if ($transactionStarted) {
+        try {
+            Remove-MutableTree $repoRoot
+            Copy-MutableTree $rollbackRoot $repoRoot
+        }
+        catch { $rollbackMessage = $_.Exception.Message }
+    }
+    if ($transactionRoot -and (Test-Path -LiteralPath $transactionRoot)) {
+        try { Remove-TransactionRoot $transactionRoot } catch { $cleanupMessage = $_.Exception.Message }
+    }
+    if ($rollbackMessage) { throw "Initialization failed: $message Rollback failed: $rollbackMessage" }
+    if ($cleanupMessage) { throw "Initialization failed: $message Cleanup failed: $cleanupMessage Staging artifact: $transactionRoot" }
+    throw "Initialization failed: $message"
+}
+
+Write-Host "    Updated contents in $($contentPlans.Count) file(s)." -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "Done. Next steps:" -ForegroundColor Green
 Write-Host "  1. dotnet tool restore           # restores Fantomas (the F# formatter)"
@@ -302,10 +462,3 @@ Write-Host "  4. Review LICENSE (author/year) and the .fsproj package metadata."
 Write-Host "  5. NuGet publishing: add the NUGET_API_KEY repo secret, or delete"
 Write-Host "     .github/workflows/release.yml and the packaging properties in the .fsproj."
 Write-Host "  6. Commit the initialized project."
-
-# Remove both initializers unless asked to keep them.
-if (-not $KeepScript) {
-    $siblingSh = Join-Path $PSScriptRoot 'init.sh'
-    if (Test-Path $siblingSh) { Remove-Item -LiteralPath $siblingSh -Force }
-    Remove-Item -LiteralPath $selfPath -Force
-}

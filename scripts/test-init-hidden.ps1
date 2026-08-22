@@ -60,6 +60,20 @@ function Assert-PsCollisionFailure([string]$name) {
     Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
 }
 
+function Assert-PsRollback([string]$name, [string]$boundary) {
+    $caseRoot = Join-Path $tempRoot "rollback-$name"
+    Copy-Template $caseRoot
+    $before = Get-Snapshot $caseRoot
+    $env:TEMPLATE_INIT_FAIL_AT = $boundary
+    try {
+        $output = & pwsh -NoProfile -File (Join-Path $caseRoot 'scripts/init.ps1') -ProjectName Acme.Widgets -KeepScript 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0) { throw "expected rollback failure for $name" }
+    }
+    finally { Remove-Item Env:TEMPLATE_INIT_FAIL_AT -ErrorAction SilentlyContinue }
+    Assert-True ($output -match 'Initialization failed') "missing failure diagnostic for ${name}: $output"
+    Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "rollback changed checkout for $name"
+}
+
 function Assert-PsScope([string]$name) {
     $caseRoot = Join-Path $tempRoot "scope-$name"
     Copy-Template $caseRoot
@@ -100,6 +114,9 @@ try {
     Assert-PsFailure 'unsafe-owner' 'Invalid -GitHubOwner' @(
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
     Assert-PsCollisionFailure 'generated-name-collision'
+    Assert-PsRollback 'rollback-after-rename' 'apply-path-rename'
+    Assert-PsRollback 'rollback-after-settings' 'apply-settings-activation'
+    Assert-PsRollback 'rollback-during-cleanup' 'cleanup'
     Assert-PsScope 'known-text-scope'
 
     foreach ($entry in (Get-ChildItem -LiteralPath $sourceRoot -Force)) {
