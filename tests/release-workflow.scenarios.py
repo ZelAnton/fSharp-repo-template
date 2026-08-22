@@ -194,6 +194,23 @@ class ReleaseWorkflowScenarios(unittest.TestCase):
         self.assertIn('command.append(f"{prev_tag}..HEAD")', auto_fill)
         self.assertIn('generating from the full git history for the first release', auto_fill)
 
+    def test_git_cliff_uses_an_exact_verified_release_pin(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        source_identity = workflow.index("      - name: Capture release source identity")
+        install_start = workflow.index("      - name: Install git-cliff")
+        auto_fill = workflow.index("      - name: Auto-fill [Unreleased] from git log if empty")
+        commit = workflow.index("      - name: Commit and tag the release (local only)")
+        pivot = workflow.index("      - name: Push to NuGet.org (irreversible pivot)")
+        install = workflow[install_start:auto_fill]
+
+        self.assertLess(source_identity, install_start)
+        self.assertLess(install_start, auto_fill)
+        self.assertLess(install_start, commit)
+        self.assertLess(install_start, pivot)
+        self.assertIn("tool: git-cliff@2.13.1", install)
+        self.assertNotRegex(install, r"tool:\s+git-cliff@2(?:\s|$)")
+        self.assertEqual(len(re.findall(r"tool:\s+git-cliff@\S+", install)), 1)
+
     def test_first_release_changelog_link_points_to_published_tag(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         promote_start = workflow.index("      - name: Promote Unreleased section in CHANGELOG.md")
