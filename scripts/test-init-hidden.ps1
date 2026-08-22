@@ -46,6 +46,13 @@ function Assert-PsFailure([string]$name, [string]$expected, [string[]]$arguments
     Assert-True (($before -join "`n") -eq ((Get-Snapshot $caseRoot) -join "`n")) "initializer mutated checkout for $name"
 }
 
+function Assert-PsValidProjectName([string]$name, [string]$projectName) {
+    $caseRoot = Join-Path $tempRoot "success-$name"
+    Copy-Template $caseRoot
+    & (Join-Path $caseRoot 'scripts/init.ps1') -ProjectName $projectName -KeepScript | Out-Null
+    Assert-True (Test-Path -LiteralPath (Join-Path $caseRoot "src/$projectName/$projectName.fsproj")) "valid project name was not initialized for $name"
+}
+
 function Assert-PsCollisionFailure([string]$name) {
     $caseRoot = Join-Path $tempRoot "failure-$name"
     Copy-Template $caseRoot
@@ -200,6 +207,21 @@ try {
         Assert-PsFailure ("control-author-" + $entry.Key) 'Invalid -Author' @(
             '-ProjectName', 'Acme.Widgets', '-Author', $entry.Value)
     }
+    foreach ($entry in @(
+            @{ Name = 'CON'; Base = 'CON' }
+            @{ Name = 'con.Tools'; Base = 'con' }
+            @{ Name = 'AUX'; Base = 'AUX' }
+            @{ Name = 'COM1'; Base = 'COM1' }
+            @{ Name = 'LPT1'; Base = 'LPT1' }
+            @{ Name = 'NUL.Tools'; Base = 'NUL' }
+        )) {
+        Assert-PsFailure ("reserved-device-" + $entry.Name) "Windows reserves the base name '$($entry.Base)'" @(
+            '-ProjectName', $entry.Name, '-KeepScript')
+    }
+    $tooLongProjectName = 'A' * 240
+    Assert-PsFailure 'project-name-path-length' 'portable path component limit of 255 bytes' @(
+        '-ProjectName', $tooLongProjectName, '-KeepScript')
+    Assert-PsValidProjectName 'safe-device-segment' 'Acme.CON'
     Assert-PsFailure 'unsafe-owner' 'Invalid -GitHubOwner' @(
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
     Assert-PsCollisionFailure 'generated-name-collision'

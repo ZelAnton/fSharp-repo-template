@@ -19,6 +19,7 @@
 .PARAMETER ProjectName
     Project / namespace / assembly / NuGet package id. Required.
     Letters, digits, underscores; dot-separated segments allowed (e.g. Acme.Widgets).
+    The generated path names must also be portable across Windows and POSIX filesystems.
 
 .PARAMETER Author
     Author for LICENSE and the .fsproj. Defaults to `git config user.name`, else "Your Name".
@@ -57,6 +58,20 @@ $ErrorActionPreference = 'Stop'
 
 if ($ProjectName -notmatch '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$') {
     throw "Invalid -ProjectName '$ProjectName'. Use letters, digits, underscores; dot-separated segments allowed (e.g. Acme.Widgets)."
+}
+
+$portablePathComponentLimit = 255
+$windowsBaseName = $ProjectName.Split('.')[0]
+if ($windowsBaseName -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$') {
+    throw "Invalid -ProjectName '$ProjectName': Windows reserves the base name '$windowsBaseName' (case-insensitive), including when followed by an extension. No files were changed."
+}
+
+foreach ($suffix in @('', '.slnx', '.sln.DotSettings', '.Tests', '.Tests.fsproj')) {
+    $generatedName = "$ProjectName$suffix"
+    $nameLength = [System.Text.Encoding]::UTF8.GetByteCount($generatedName)
+    if ($nameLength -gt $portablePathComponentLimit) {
+        throw "Invalid -ProjectName '$ProjectName': generated path component '$generatedName' exceeds the portable path component limit of $portablePathComponentLimit bytes. No files were changed."
+    }
 }
 
 $gitCommand = $null

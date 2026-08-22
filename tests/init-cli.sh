@@ -375,6 +375,14 @@ run_failure_case 'control-author-carriage-return' 'metadata values must not cont
 run_failure_case 'unsafe-owner' 'invalid --github-owner' \
   --project-name Acme.Widgets --github-owner 'acme;touch-pwned'
 
+for project_name in CON con AUX aux COM1 com9 LPT1 lpt9 NUL.Tools; do
+  run_failure_case "reserved-device-${project_name}" 'Windows reserves the base name' \
+    --project-name "$project_name" --keep-script
+done
+too_long_project_name="$(printf '%240s' '' | tr ' ' A)"
+run_failure_case 'project-name-path-length' 'portable path component limit of 255 bytes' \
+  --project-name "$too_long_project_name" --keep-script
+
 run_success_case 'year-upper-boundary' '2147483647' \
   --project-name Acme.Widgets --year 2147483647 --keep-script
 run_success_case 'year-lower-boundary' '-2147483648' \
@@ -383,6 +391,8 @@ run_failure_case 'year-above-upper-boundary' "invalid --year '2147483648'" \
   --project-name Acme.Widgets --year 2147483648 --keep-script
 run_failure_case 'year-below-lower-boundary' "invalid --year '-2147483649'" \
   --project-name Acme.Widgets --year -2147483649 --keep-script
+run_success_case 'safe-device-segment' '2026' \
+  --project-name Acme.CON --keep-script
 run_collision_case 'generated-name-collision'
 run_settings_conflict_case 'settings-conflict'
 run_settings_symlink_case 'dangling-settings-link'
