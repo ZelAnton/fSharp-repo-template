@@ -59,12 +59,16 @@ if ($ProjectName -notmatch '^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$'
     throw "Invalid -ProjectName '$ProjectName'. Use letters, digits, underscores; dot-separated segments allowed (e.g. Acme.Widgets)."
 }
 
+$gitCommand = $null
+if (-not $Author -or -not $AuthorEmail) {
+    $gitCommand = Get-Command -Name git -CommandType Application -ErrorAction SilentlyContinue
+}
 if (-not $Author) {
-    $Author = (& git config user.name 2>$null)
+    if ($gitCommand) { $Author = (& $gitCommand.Source config user.name 2>$null) }
     if (-not $Author) { $Author = 'Your Name' }
 }
 if (-not $AuthorEmail) {
-    $AuthorEmail = (& git config user.email 2>$null)
+    if ($gitCommand) { $AuthorEmail = (& $gitCommand.Source config user.email 2>$null) }
     if (-not $AuthorEmail) { $AuthorEmail = 'you@example.com' }
 }
 if (-not $GitHubOwner) { $GitHubOwner = 'your-org' }
