@@ -106,8 +106,11 @@ available", see the FSharp.Core note under
 
 `scripts/test-linux.ps1` mounts the repo into `mcr.microsoft.com/dotnet/sdk:10.0`
 and runs `dotnet build` + `dotnet test`. Anonymous Docker volumes shadow the
-`bin`/`obj` folders so the host working copy stays untouched; a named volume
-(`__ProjectName__-nuget`) caches packages between runs. CI mirrors this with
+`bin`/`obj` folders so the host working copy stays untouched. For a normal
+project name, the named volume `<ProjectName>-nuget` caches NuGet packages
+between runs, preserving the established cache name. If the project name
+begins with `_`, Docker's leading-character restriction requires the fallback
+name `nuget-<ProjectName>` instead. CI mirrors this with
 [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs the same
 build/test across `ubuntu-latest`, `windows-latest`, and `macos-latest` on PR
 and push to main. This script is optional — delete it and `docs/linux-testing.md`

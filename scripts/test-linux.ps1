@@ -51,7 +51,14 @@ $ErrorActionPreference = 'Stop'
 # separators uniformly. The bind-mount source still needs to be quoted in case
 # the user clones the repo into a path containing spaces.
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path -replace '\\', '/'
-$NugetVolume = '__ProjectName__-nuget'
+$ProjectName = '__ProjectName__'
+if ($ProjectName -match '^_') {
+    # Docker named volumes cannot begin with an underscore.
+    $NugetVolume = "nuget-$ProjectName"
+}
+else {
+    $NugetVolume = "$ProjectName-nuget"
+}
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Host "docker CLI not found on PATH." -ForegroundColor Red

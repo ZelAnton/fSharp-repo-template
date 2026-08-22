@@ -117,7 +117,10 @@ This is the one F# dependency rule that is easy to get wrong and fails silently.
 - `scripts/test-linux.ps1` runs the full test suite inside a Linux container using Rancher Desktop or Docker Desktop. It is an optional helper — remove it (and `docs/linux-testing.md`) if your project does not need it.
 - Requires PowerShell 7+ and a running Docker daemon (`docker` on PATH).
 - The script shadows `bin/` and `obj/` folders with anonymous Docker volumes so Windows IDE artifacts do not leak into the Linux build.
-- A named volume (`__ProjectName__-nuget`) caches NuGet packages between runs.
+- For a normal project name, the named volume `<ProjectName>-nuget` caches NuGet
+  packages between runs, preserving the established cache name. If the project
+  name begins with `_`, Docker's leading-character restriction requires the
+  fallback name `nuget-<ProjectName>` instead.
 - Supports `-Filter`, `-Configuration`, and `-Rebuild` parameters.
 - Do not modify the anonymous-volume list in the script without also verifying that the Linux build still resolves `__ProjectName__.dll` correctly (the test project uses `AssemblySearchPaths` pointing to the standard `src/__ProjectName__/bin/` location).
 
