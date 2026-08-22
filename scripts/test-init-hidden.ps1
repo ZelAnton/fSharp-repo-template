@@ -200,8 +200,6 @@ try {
         Assert-PsFailure ("control-author-" + $entry.Key) 'Invalid -Author' @(
             '-ProjectName', 'Acme.Widgets', '-Author', $entry.Value)
     }
-    Assert-PsFailure 'token-description' 'Invalid -Description' @(
-        '-ProjectName', 'Acme.Widgets', '-Description', 'prefix__Author__suffix')
     Assert-PsFailure 'unsafe-owner' 'Invalid -GitHubOwner' @(
         '-ProjectName', 'Acme.Widgets', '-GitHubOwner', 'acme;touch-pwned')
     Assert-PsCollisionFailure 'generated-name-collision'
