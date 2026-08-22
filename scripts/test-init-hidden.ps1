@@ -98,17 +98,20 @@ try {
 
     $contextRoot = Join-Path $tempRoot 'encoded-context'
     Copy-Template $contextRoot
-    $author = 'O"Reilly & Sons; $HOME `id`'
+    $author = 'O"Reilly \Program Files\Acme\"quoted"\bin & Sons; $HOME `id`'
     Set-Content -LiteralPath (Join-Path $contextRoot 'metadata.json') -Value '{"author":"__Author__"}' -NoNewline
     Set-Content -LiteralPath (Join-Path $contextRoot 'metadata.yaml') -Value 'value: "__Author__"' -NoNewline
     Set-Content -LiteralPath (Join-Path $contextRoot 'metadata.py') -Value 'value = "__Author__"' -NoNewline
     Set-Content -LiteralPath (Join-Path $contextRoot 'metadata.sh') -Value 'printf "%s\n" "__Author__"' -NoNewline
     & (Join-Path $contextRoot 'scripts/init.ps1') -ProjectName 'Acme.Widgets' -Author $author -AuthorEmail 'dev+tag@example.com' -GitHubOwner 'acme-tools' -Description 'Widget toolkit' -Year 2026 -KeepScript | Out-Null
-    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.json') -Raw) -eq '{"author":"O\"Reilly & Sons; $HOME `id`"}') 'JSON metadata was not encoded.'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.yaml') -Raw) -eq 'value: "O\"Reilly & Sons; $HOME `id`"') 'YAML metadata was not encoded.'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.py') -Raw) -eq 'value = "O\"Reilly & Sons; $HOME `id`"') 'Python metadata was not encoded.'
+    $expectedJson = '"O\"Reilly \\Program Files\\Acme\\\"quoted\"\\bin & Sons; $HOME `id`"'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.json') -Raw) -eq ('{"author":' + $expectedJson + '}')) 'JSON metadata was not encoded.'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.yaml') -Raw) -eq ('value: ' + $expectedJson)) 'YAML metadata was not encoded.'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.py') -Raw) -eq ('value = ' + $expectedJson)) 'Python metadata was not encoded.'
+    $pythonValue = & python3 -c "import runpy, sys; print(runpy.run_path(sys.argv[1])['value'])" (Join-Path $contextRoot 'metadata.py')
+    Assert-True ($pythonValue -eq $author) 'Python metadata did not round-trip.'
     $shellMetadata = Get-Content -LiteralPath (Join-Path $contextRoot 'metadata.sh') -Raw
-    $expectedShellMetadata = 'printf "%s\n" "O\"Reilly & Sons; \$HOME \`id\`"'
+    $expectedShellMetadata = 'printf "%s\n" "O\"Reilly \\Program Files\\Acme\\\"quoted\"\\bin & Sons; \$HOME \`id\`"'
     Assert-True ($shellMetadata -eq $expectedShellMetadata) 'Shell metadata was not escaped.'
     $xml = [xml](Get-Content -LiteralPath (Join-Path $contextRoot 'src/Acme.Widgets/Acme.Widgets.fsproj') -Raw)
     Assert-True ($xml.Project.PropertyGroup.Authors -eq $author) 'XML metadata did not round-trip.'

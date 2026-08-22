@@ -84,7 +84,7 @@ run_success_case() {
 run_context_case() {
   local name="$1"
   local checkout="$test_root/$name"
-  local author='O"Reilly & Sons; $HOME `id`'
+  local author='O"Reilly \Program Files\Acme\"quoted"\bin & Sons; $HOME `id`'
   mkdir -p "$checkout"
   (
     cd "$repo_root"
@@ -116,16 +116,19 @@ import xml.etree.ElementTree as ET
 root = pathlib.Path(sys.argv[1])
 author = sys.argv[2]
 assert json.loads((root / "metadata.json").read_text())["author"] == author
-assert (root / "metadata.yaml").read_text().rstrip("\n") == 'value: "O\\"Reilly & Sons; $HOME `id`"'
-assert (root / "metadata.py").read_text().rstrip("\n") == 'value = "O\\"Reilly & Sons; $HOME `id`"'
+expected_json = json.dumps(author, ensure_ascii=False)
+assert (root / "metadata.yaml").read_text().rstrip("\n") == "value: " + expected_json
+assert (root / "metadata.py").read_text().rstrip("\n") == "value = " + expected_json
 assert ET.parse(root / "src/Acme.Widgets/Acme.Widgets.fsproj").findtext("Authors") == author
-compile((root / "metadata.py").read_text(), str(root / "metadata.py"), "exec")
+namespace = {}
+exec(compile((root / "metadata.py").read_text(), str(root / "metadata.py"), "exec"), namespace)
+assert namespace["value"] == author
 PY
   [ "$(cd "$checkout" && bash metadata.sh)" = "$author" ] || {
     printf 'shell context did not preserve metadata for %s\n' "$name" >&2
     return 1
   }
-  grep -F -- 'git config user.name "O\"Reilly & Sons; \$HOME \`id\`"' \
+  grep -F -- 'git config user.name "O\"Reilly \\Program Files\\Acme\\\"quoted\"\\bin & Sons; \$HOME \`id\`"' \
     "$checkout/.github/workflows/release.yml" >/dev/null || {
     printf 'workflow shell context was not escaped for %s\n' "$name" >&2
     return 1

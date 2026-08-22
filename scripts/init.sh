@@ -201,7 +201,7 @@ xml_escape() {
 
 shell_escape() {
   local value="$1" escaped="" char i
-  local backslash='\\' dollar='$' backtick='`' quote='"'
+  local backslash='\' dollar='$' backtick='`' quote='"'
   for ((i = 0; i < ${#value}; i++)); do
     char="${value:i:1}"
     case "$char" in
@@ -214,7 +214,7 @@ shell_escape() {
 
 python_escape() {
   local value="$1" escaped="" char i
-  local backslash='\\' quote='"'
+  local backslash='\' quote='"'
   for ((i = 0; i < ${#value}; i++)); do
     char="${value:i:1}"
     case "$char" in
@@ -227,7 +227,7 @@ python_escape() {
 
 json_escape() {
   local value="$1" escaped="" char i
-  local backslash='\\' quote='"'
+  local backslash='\' quote='"'
   for ((i = 0; i < ${#value}; i++)); do
     char="${value:i:1}"
     case "$char" in
