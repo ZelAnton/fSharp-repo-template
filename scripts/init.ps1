@@ -70,6 +70,25 @@ if (-not $AuthorEmail) {
 if (-not $GitHubOwner) { $GitHubOwner = 'your-org' }
 if (-not $Description) { $Description = 'TODO: project description' }
 
+$tokenPattern = '__ProjectName__|__Author__|__AuthorEmail__|__GitHubOwner__|__Description__|__Year__'
+$metadata = [ordered]@{
+    Author      = $Author
+    AuthorEmail = $AuthorEmail
+    GitHubOwner = $GitHubOwner
+    Description = $Description
+}
+foreach ($entry in $metadata.GetEnumerator()) {
+    if ($entry.Value -match '[\x00-\x1F\x7F\u2028\u2029]') {
+        throw "Invalid -$($entry.Key): metadata values must not contain control characters or line separators."
+    }
+    if ($entry.Value -match $tokenPattern) {
+        throw "Invalid -$($entry.Key): metadata values must not contain template tokens."
+    }
+}
+if ($GitHubOwner -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$') {
+    throw "Invalid -GitHubOwner '$GitHubOwner'. Use letters, digits, and internal hyphens only."
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $selfPath = $PSCommandPath
 
@@ -82,12 +101,71 @@ $replacements = [ordered]@{
     '__Year__'        = "$Year"
 }
 
+function ConvertTo-XmlContent([string]$value) {
+    return $value.Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;').Replace('"', '&quot;').Replace("'", '&apos;')
+}
+
+function ConvertTo-ShellDoubleQuoted([string]$value) {
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in $value.ToCharArray()) {
+        if ([int]$character -in @(0x5C, 0x22, 0x24, 0x60)) {
+            [void]$builder.Append('\')
+        }
+        [void]$builder.Append($character)
+    }
+    return $builder.ToString()
+}
+
+function ConvertTo-PythonDoubleQuoted([string]$value) {
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in $value.ToCharArray()) {
+        if ([int]$character -in @(0x5C, 0x22)) {
+            [void]$builder.Append('\')
+        }
+        [void]$builder.Append($character)
+    }
+    return $builder.ToString()
+}
+
+function ConvertTo-JsonStringContent([string]$value) {
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in $value.ToCharArray()) {
+        $escaped = switch ([int]$character) {
+            0x08 { '\b' }
+            0x09 { '\t' }
+            0x0A { '\n' }
+            0x0C { '\f' }
+            0x0D { '\r' }
+            0x22 { '\"' }
+            0x5C { '\\' }
+            { $_ -lt 0x20 } { '\u{0:X4}' -f [int]$character; break }
+            default { [string]$character }
+        }
+        [void]$builder.Append($escaped)
+    }
+    return $builder.ToString()
+}
+
 # Values written into XML files (e.g. the .fsproj <Authors>/<Description>) must be
-# XML-escaped — a literal & or < in an author/description would break the project file.
+# XML-escaped. The other maps protect string literals in generated JSON, shell, and
+# Python/YAML workflow contexts; raw text is only used after control/token validation.
 $xmlReplacements = [ordered]@{}
 foreach ($key in $replacements.Keys) {
-    $xmlReplacements[$key] = $replacements[$key].Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;')
+    $xmlReplacements[$key] = ConvertTo-XmlContent $replacements[$key]
 }
+$jsonReplacements = [ordered]@{}
+$shellReplacements = [ordered]@{}
+$pythonReplacements = [ordered]@{}
+foreach ($key in $replacements.Keys) {
+    $jsonReplacements[$key] = ConvertTo-JsonStringContent $replacements[$key]
+    $shellReplacements[$key] = ConvertTo-ShellDoubleQuoted $replacements[$key]
+    $pythonReplacements[$key] = ConvertTo-PythonDoubleQuoted $replacements[$key]
+}
+$workflowReplacements = [ordered]@{}
+foreach ($key in $replacements.Keys) { $workflowReplacements[$key] = $replacements[$key] }
+$workflowReplacements['__Author__'] = ConvertTo-ShellDoubleQuoted $Author
+$workflowReplacements['__AuthorEmail__'] = ConvertTo-ShellDoubleQuoted $AuthorEmail
+$workflowReplacements['__GitHubOwner__'] = ConvertTo-PythonDoubleQuoted $GitHubOwner
 $xmlFileExtensions = @('.fsproj', '.props', '.targets', '.slnx', '.config')
 
 $excludedDirs = @('.git', '.jj', 'bin', 'obj')
@@ -114,14 +192,26 @@ $files = Get-ChildItem -Path $repoRoot -File -Recurse -Force | Where-Object {
 # user may add e.g. a strong-name key or icon before running init.
 $binaryExtensions = @('.snk', '.pfx', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.zip')
 $contentChanged = 0
+function Get-Replacements([string]$fullPath) {
+    $relativePath = $fullPath.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+    $extension = [System.IO.Path]::GetExtension($fullPath).ToLowerInvariant()
+    if ($xmlFileExtensions -contains $extension) { return $xmlReplacements }
+    if ($extension -eq '.json') { return $jsonReplacements }
+    if ($extension -in @('.py')) { return $pythonReplacements }
+    if ($extension -in @('.sh', '.bash')) { return $shellReplacements }
+    if ($relativePath -eq '.github/workflows/release.yml') { return $workflowReplacements }
+    if ($extension -in @('.yml', '.yaml')) { return $jsonReplacements }
+    return $replacements
+}
 foreach ($file in $files) {
     if ($binaryExtensions -contains $file.Extension) { continue }
     $text = [System.IO.File]::ReadAllText($file.FullName)
     $new = $text
-    $map = if ($xmlFileExtensions -contains $file.Extension) { $xmlReplacements } else { $replacements }
-    foreach ($key in $map.Keys) {
-        $new = $new.Replace($key, $map[$key])
-    }
+    $map = Get-Replacements $file.FullName
+    $new = [regex]::Replace($text, $tokenPattern, [System.Text.RegularExpressions.MatchEvaluator]{
+        param([System.Text.RegularExpressions.Match]$match)
+        [string]$map[$match.Value]
+    })
     if ($new -ne $text) {
         [System.IO.File]::WriteAllText($file.FullName, $new, (New-Object System.Text.UTF8Encoding($false)))
         $contentChanged++

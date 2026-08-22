@@ -47,8 +47,9 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
    `-ProjectName` / `--project-name` is required; the rest are optional and fall
    back to sensible defaults (`git config user.name`, `git config user.email`,
    `your-org`, a TODO description, the current year). The script:
-   - rejects missing or option-like values before changing the checkout; `--year`
-     must be a numeric value;
+   - rejects missing or option-like values, metadata control characters or line
+     separators, and template tokens before changing the checkout; `--year` must
+     be a numeric value;
    - replaces the placeholder tokens in every file's contents;
    - renames the token-named files and folders (`src/__ProjectName__`,
      `tests/__ProjectName__.Tests`, the `.fsproj`/`.slnx`/`.sln.DotSettings`);

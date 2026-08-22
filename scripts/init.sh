@@ -167,21 +167,119 @@ fi
 [ -n "$description" ]  || description="TODO: project description"
 [ -n "$year" ]         || year="$(date +%Y)"
 
+metadata_value_has_control_character() {
+  local value="$1"
+  local char
+  local i
+
+  # Match each character instead of piping to grep, whose line-oriented input
+  # treats an embedded newline as a separator rather than as matchable data.
+  for ((i = 0; i < ${#value}; i++)); do
+    char="${value:i:1}"
+    case "$char" in
+      [[:cntrl:]]) return 0 ;;
+    esac
+  done
+
+  case "$value" in
+    *$'\u2028'*|*$'\u2029'*) return 0 ;;
+  esac
+  return 1
+}
+
+validate_metadata() {
+  local option="$1"
+  local value="$2"
+  if metadata_value_has_control_character "$value"; then
+    die "invalid $option: metadata values must not contain control characters or line separators."
+  fi
+  case "$value" in
+    *__ProjectName__*|*__Author__*|*__AuthorEmail__*|*__GitHubOwner__*|*__Description__*|*__Year__*)
+      die "invalid $option: metadata values must not contain template tokens." ;;
+  esac
+}
+
+validate_metadata '--author' "$author"
+validate_metadata '--author-email' "$author_email"
+validate_metadata '--github-owner' "$github_owner"
+validate_metadata '--description' "$description"
+if ! [[ "$github_owner" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]]; then
+  die "invalid --github-owner '$github_owner'. Use letters, digits, and internal hyphens only."
+fi
+
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 self="$script_dir/$(basename "$0")"
 sibling_ps1="$script_dir/init.ps1"
 
 # Values written into XML files (e.g. the .fsproj <Authors>/<Description>) must be
-# XML-escaped — a literal &, < or > in an author/description would break the
-# project file. Escape & first so the entities introduced below aren't re-escaped.
-xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+# XML-escaped. Escape & first so the entities introduced below aren't re-escaped.
+xml_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
+}
+
+shell_escape() {
+  local value="$1" escaped="" char i
+  local backslash='\' dollar='$' backtick='`' quote='"'
+  for ((i = 0; i < ${#value}; i++)); do
+    char="${value:i:1}"
+    case "$char" in
+      "$backslash"|"$dollar"|"$backtick"|"$quote") escaped="${escaped}\\${char}" ;;
+      *) escaped="${escaped}${char}" ;;
+    esac
+  done
+  printf '%s' "$escaped"
+}
+
+python_escape() {
+  local value="$1" escaped="" char i
+  local backslash='\' quote='"'
+  for ((i = 0; i < ${#value}; i++)); do
+    char="${value:i:1}"
+    case "$char" in
+      "$backslash"|"$quote") escaped="${escaped}\\${char}" ;;
+      *) escaped="${escaped}${char}" ;;
+    esac
+  done
+  printf '%s' "$escaped"
+}
+
+json_escape() {
+  local value="$1" escaped="" char i
+  local backslash='\' quote='"'
+  for ((i = 0; i < ${#value}; i++)); do
+    char="${value:i:1}"
+    case "$char" in
+      "$backslash"|"$quote") escaped="${escaped}\\${char}" ;;
+      *) escaped="${escaped}${char}" ;;
+    esac
+  done
+  printf '%s' "$escaped"
+}
 project_x="$(xml_escape "$project_name")"
 author_x="$(xml_escape "$author")"
 email_x="$(xml_escape "$author_email")"
 owner_x="$(xml_escape "$github_owner")"
 desc_x="$(xml_escape "$description")"
 year_x="$(xml_escape "$year")"
+project_j="$(json_escape "$project_name")"
+author_j="$(json_escape "$author")"
+email_j="$(json_escape "$author_email")"
+owner_j="$(json_escape "$github_owner")"
+desc_j="$(json_escape "$description")"
+year_j="$(json_escape "$year")"
+project_sh="$(shell_escape "$project_name")"
+author_sh="$(shell_escape "$author")"
+email_sh="$(shell_escape "$author_email")"
+owner_sh="$(shell_escape "$github_owner")"
+desc_sh="$(shell_escape "$description")"
+year_sh="$(shell_escape "$year")"
+project_py="$(python_escape "$project_name")"
+author_py="$(python_escape "$author")"
+email_py="$(python_escape "$author_email")"
+owner_py="$(python_escape "$github_owner")"
+desc_py="$(python_escape "$description")"
+year_py="$(python_escape "$year")"
 
 echo "==> Initializing template as '$project_name'"
 
@@ -200,21 +298,48 @@ while IFS= read -r -d '' file; do
   case "$file" in
     *.snk|*.pfx|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.zip) continue ;;
   esac
+  p="$project_name"; a="$author"; ae="$author_email"; o="$github_owner"; d="$description"; y="$year"
   case "$file" in
     *.fsproj|*.props|*.targets|*.slnx|*.config)
-      p=$project_x; a=$author_x; e=$email_x; o=$owner_x; d=$desc_x; y=$year_x ;;
-    *)
-      p=$project_name; a=$author; e=$author_email; o=$github_owner; d=$description; y=$year ;;
+      p="$project_x"; a="$author_x"; ae="$email_x"; o="$owner_x"; d="$desc_x"; y="$year_x" ;;
+    *.json)
+      p="$project_j"; a="$author_j"; ae="$email_j"; o="$owner_j"; d="$desc_j"; y="$year_j" ;;
+    *.py)
+      p="$project_py"; a="$author_py"; ae="$email_py"; o="$owner_py"; d="$desc_py"; y="$year_py" ;;
+    *.sh|*.bash)
+      p="$project_sh"; a="$author_sh"; ae="$email_sh"; o="$owner_sh"; d="$desc_sh"; y="$year_sh" ;;
+    */.github/workflows/release.yml)
+      a="$author_sh"; ae="$email_sh"; o="$owner_py" ;;
+    *.yml|*.yaml)
+      p="$project_j"; a="$author_j"; ae="$email_j"; o="$owner_j"; d="$desc_j"; y="$year_j" ;;
   esac
   # Preserve trailing newlines: append a sentinel before capture, strip it after.
   content="$(cat "$file"; printf x)"; content="${content%x}"
   orig="$content"
-  content="${content//__ProjectName__/$p}"
-  content="${content//__Author__/$a}"
-  content="${content//__AuthorEmail__/$e}"
-  content="${content//__GitHubOwner__/$o}"
-  content="${content//__Description__/$d}"
-  content="${content//__Year__/$y}"
+  new="$(TPL_SRC="$content" TPL_PROJECT="$p" TPL_AUTHOR="$a" \
+    TPL_AUTHOR_EMAIL="$ae" TPL_OWNER="$o" TPL_DESC="$d" TPL_YEAR="$y" \
+    awk '
+      function replacement(tok) {
+        if (tok == "__ProjectName__") return ENVIRON["TPL_PROJECT"]
+        if (tok == "__Author__") return ENVIRON["TPL_AUTHOR"]
+        if (tok == "__AuthorEmail__") return ENVIRON["TPL_AUTHOR_EMAIL"]
+        if (tok == "__GitHubOwner__") return ENVIRON["TPL_OWNER"]
+        if (tok == "__Description__") return ENVIRON["TPL_DESC"]
+        return ENVIRON["TPL_YEAR"]
+      }
+      function repl(s, out, tok) {
+        out = ""
+        while (match(s, /__ProjectName__|__Author__|__AuthorEmail__|__GitHubOwner__|__Description__|__Year__/)) {
+          tok = substr(s, RSTART, RLENGTH)
+          out = out substr(s, 1, RSTART - 1) replacement(tok)
+          s = substr(s, RSTART + RLENGTH)
+        }
+        return out s
+      }
+      BEGIN { printf "%s", repl(ENVIRON["TPL_SRC"]) }
+    '; printf x)"
+  new="${new%x}"
+  content="$new"
   if [ "$content" != "$orig" ]; then
     printf '%s' "$content" > "$file"
     changed=$((changed + 1))

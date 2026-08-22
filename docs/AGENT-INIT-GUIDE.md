@@ -96,8 +96,9 @@ Read this even if you do nothing else. **It fails silently.**
 
    `-ProjectName` is required; the rest fall back to sensible defaults. The
    script substitutes tokens, renames files/folders, activates
-   `.claude/settings.json` from its `.template`, and deletes `TEMPLATE.md` and
-   `docs/AGENT-INIT-GUIDE.md` (and itself unless `-KeepScript`). It does **not**
+   `.claude/settings.json` from its `.template`, rejects metadata control
+   characters, line separators, and template tokens before changing the
+   checkout, and deletes `TEMPLATE.md` and `docs/AGENT-INIT-GUIDE.md` (and itself unless `-KeepScript`). It does **not**
    change what is tracked — making the agent files local is a separate by-hand
    step (see below).
 4. **Verify**:
