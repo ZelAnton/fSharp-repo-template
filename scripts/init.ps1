@@ -308,7 +308,7 @@ $knownTextPaths = @(
     'LICENSE', 'README.md', 'SECURITY.md', 'TEMPLATE.md', '__ProjectName__.sln.DotSettings',
     '__ProjectName__.slnx', 'cliff.toml', 'nuget.config', 'release-token-bypass.md',
     'scripts/check-env.ps1', 'scripts/check-env.sh', 'scripts/test-linux-regression.ps1',
-    'scripts/test-linux.ps1', 'scripts/verify-nuget-package.py',
+    'scripts/test-linux.ps1', 'scripts/verify-nuget-package.py', 'scripts/verify-test-results.py',
     'src/__ProjectName__/Greeter.fs', 'src/__ProjectName__/__ProjectName__.fsproj',
     'tests/__ProjectName__.Tests/GreeterTests.fs',
     'tests/__ProjectName__.Tests/__ProjectName__.Tests.fsproj',
