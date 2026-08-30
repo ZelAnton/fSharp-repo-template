@@ -80,7 +80,7 @@ release pipeline, and conventions for agents in [CLAUDE.md](CLAUDE.md) /
    #    earlier `!.claude/...` ship lines (last matching pattern wins).
    printf '\n/AGENTS.md\n/CLAUDE.md\n.claude/\n' >> .gitignore
    # 2) Stop tracking the copies the template committed (kept on disk).
-   git rm -r --cached AGENTS.md CLAUDE.md .claude   # jj: jj file untrack AGENTS.md CLAUDE.md .claude
+   git rm -r --cached AGENTS.md CLAUDE.md .claude
    git add .gitignore && git commit -m "Keep agent instructions local"   # commit the ignore rule *and* the removals together
    ```
 
@@ -206,7 +206,7 @@ project.
 
 - [ ] Agent-instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/`) git-ignored
       and untracked so they stay local and never reach the remote — done by hand
-      before the first push (step 6 above); verify with `git status` / `jj st`.
+      before the first push (step 6 above); verify with `git status`.
 - [ ] `NUGET_API_KEY` repo secret added (only if publishing to NuGet), or
       NuGet Trusted Publishing (OIDC) configured — see `release.yml`.
 - [ ] LICENSE author/year and license choice reviewed.

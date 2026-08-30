@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- The template and generated-repository guidance now use Git directly without secondary version-control metadata.
 - Initializer transformations now stage and roll back checkout changes when an intermediate operation fails.
 - First releases now apply the selected major, minor, or patch bump to the project version seed.
 

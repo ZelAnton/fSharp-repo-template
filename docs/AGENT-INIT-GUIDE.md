@@ -64,7 +64,7 @@ Confirm these facts by reading, not by assuming:
     spaces in `.yml`/`.ps1` (see `.editorconfig`).
   - **Fantomas** formats F# and is checked in CI. **No CodeQL** (unsupported for F#).
   - Canonical MSBuild path props (`$(RepoRoot)`, `$(MainProjectDir)`) instead of `..\..\`.
-- It uses **jujutsu (`jj`)** colocated with git. Drive VCS through `jj`.
+- It uses **Git** directly with a feature-branch and pull-request workflow.
 
 ## The FSharp.Core / central-package-management trap
 
@@ -163,12 +163,10 @@ Append the ignore patterns, then untrack (working copy kept), then commit:
 ```bash
 # Appended last so `.claude/` overrides the earlier `!.claude/...` ship lines.
 printf '\n/AGENTS.md\n/CLAUDE.md\n.claude/\n' >> .gitignore
-git rm -r --cached AGENTS.md CLAUDE.md .claude   # jj-colocated: jj file untrack AGENTS.md CLAUDE.md .claude
+git rm -r --cached AGENTS.md CLAUDE.md .claude
 git add .gitignore && git commit -m "Keep agent instructions local"   # commit the ignore rule *and* the removals together
 ```
 
-`jj file untrack` only drops paths *already* matched by an ignore rule, so add the
-patterns first (jj honors `.gitignore` and `.git/info/exclude` alike).
 
 **Zero filename trace in the remote (optional).** `AGENTS.md` and `CLAUDE.md`
 aren't referenced anywhere in the tracked `.gitignore`, so you can instead keep
@@ -185,7 +183,7 @@ git rm --cached AGENTS.md CLAUDE.md
 so its rule still has to live in (or be removed from) the tracked `.gitignore` as
 above.
 
-Verify with `git status` (or `jj st`): the files must not appear as tracked or as
+Verify with `git status`: the files must not appear as tracked or as
 new/untracked-to-be-added, and a `git push` must not carry them.
 
 **Caveat — files already in the remote's history.** Untrack-and-ignore stops the
@@ -236,8 +234,8 @@ you actually produced.
   `.claude/settings.json` yourself — the self-modification classifier will (and
   should) block it. The template ships `.claude/settings.json.template`; the init
   script activates it, or the user does.
-- **VCS.** The repo is jj-colocated. Use `jj` commands; if you must use raw git,
-  follow with `jj git import`.
+- **VCS.** The repo uses Git directly. Keep each task on a focused feature branch
+  and publish it through a pull request into `main`.
 
 ## Updating this guide
 
